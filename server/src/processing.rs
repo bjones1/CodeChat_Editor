@@ -121,10 +121,11 @@ pub enum CodeMirrorDiffable {
     Diff(CodeMirrorDiff),
 }
 
-/// <a id="SourceFileMetadata"></a>Metadata about a source file sent along with
-/// it both to and from the client. TODO: currently, this is too simple to
-/// justify a struct. This allows for future growth -- perhaps the valid types
-/// of comment delimiters?
+/// <h3 id="SourceFileMetadata"><code>SourceFileMetadata</code></h3>
+///
+/// Metadata about a source file sent along with it both to and from the client.
+/// TODO: currently, this is too simple to justify a struct. This allows for
+/// future growth -- perhaps the valid types of comment delimiters?
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 pub struct SourceFileMetadata {
     /// The lexer used to transforms source code into code and doc blocks and
@@ -1866,8 +1867,7 @@ fn assign_auto_ids(
 /// [DOMPurify](https://github.com/cure53/DOMPurify), which TinyMCE uses to
 /// sanitize attributes, removes an attribute whose value contains `-->` or a
 /// closing tag such as `</title`, either of which optional content may hold.
-/// `optional_content` decodes it.
-/// <fragment id="cc-BHC6fJQ8bU"></fragment>
+/// `optional_content` decodes it. <fragment id="cc-BHC6fJQ8bU"></fragment>
 fn hydrate_source_xref(
     // The cache, already locked by the caller.
     cache: &Cache,
@@ -1891,8 +1891,8 @@ fn hydrate_source_xref(
     hydrate_xref(cache, node, path)
 }
 
-/// The optional content of a hydrated `<xref>`, decoded from its
-/// `data-content` attribute; see `hydrate_source_xref`.
+/// The optional content of a hydrated `<xref>`, decoded from its `data-content`
+/// attribute; see `hydrate_source_xref`.
 fn optional_content(
     // The hydrated `<xref>` element.
     node: &Rc<Node>,
@@ -2819,9 +2819,9 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
     Ok(walk_context)
 }
 
-/// Hydrate each descendant of a node which hydration transforms: math,
-/// Mermaid, and GraphViz. Unlike `hydrating_walk_node`, this collects no facts,
-/// so it suits HTML which defines none.
+/// Hydrate each descendant of a node which hydration transforms: math, Mermaid,
+/// and GraphViz. Unlike `hydrating_walk_node`, this collects no facts, so it
+/// suits HTML which defines none.
 fn hydrate_descendants(
     // The node whose descendants are hydrated.
     node: &Rc<Node>,
@@ -2870,8 +2870,7 @@ fn hydrate_child(
         && let Some(text_child) = text_children.iter().next()
         && let NodeData::Text { .. } = &text_child.data
     {
-        // Make the parent node a `element_name` node, with the child's
-        // text.
+        // Make the parent node a `element_name` node, with the child's text.
         let wc_mermaid = Node::new(NodeData::Element {
             name: QualName::new(None, ns!(html), LocalName::from(*element_name)),
             attrs: RefCell::new(vec![]),
@@ -2881,8 +2880,7 @@ fn hydrate_child(
         wc_mermaid.children.borrow_mut().push(text_child.clone());
         Some(wc_mermaid)
     } else {
-        // See if this is a math node to replace; if not, this returns
-        // `None`.
+        // See if this is a math node to replace; if not, this returns `None`.
         replace_math_node(child, true)
     };
 

@@ -18,7 +18,7 @@
 // `CodeChatEditor.mts` -- the CodeChat Editor Client
 // ==================================================
 //
-// The overall process of load a file is:
+// The overall process of loading a file is:
 //
 // 1. The user browses to a file on the local machine, using the very simple
 //    file browser webpage provided by the CodeChat Server. Clicking on this
@@ -81,10 +81,10 @@ import {
     rand,
 } from "./shared.mjs";
 import { showToast } from "./show_toast.mjs";
+import type { CursorPosition } from "./rust-types/CursorPosition.js";
 
 // ### CSS
 import "./css/CodeChatEditor.css";
-import { CursorPosition } from "./rust-types/CursorPosition.js";
 
 // Data structures
 // ---------------
@@ -93,21 +93,16 @@ import { CursorPosition } from "./rust-types/CursorPosition.js";
 // a [query string](https://en.wikipedia.org/wiki/Query_string)
 // (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
 //
-// The member names below are looked up by the string value of the `mode`
-// query parameter (see the numeric-enum reverse-mapping trick used where this
-// is read), so they must stay exactly these lowercase strings rather than
+// The member names below are looked up by the string value of the `mode` query
+// parameter (see the numeric-enum reverse-mapping trick used where this is
+// read), so they must stay exactly these lowercase strings rather than
 // following the usual PascalCase member naming convention.
 /* eslint-disable @typescript-eslint/naming-convention */
 enum EditorMode {
     // Display the source code using CodeChat, but disallow editing.
     view,
-    // For this source, the same a view; the server uses this to avoid recursive
-    // iframes of the table of contents.
-    toc,
     // The full CodeChat editor.
     edit,
-    // Show only raw source code; ignore doc blocks, treating them also as code.
-    raw,
 }
 /* eslint-enable @typescript-eslint/naming-convention */
 
@@ -123,7 +118,7 @@ declare global {
                 scrollLine?: number,
             ) => Promise<void>;
             doDebug: () => void;
-            sendUpdate: (_only_if_dirty: boolean) => Promise<void>;
+            sendUpdate: (onlyIfDirty: boolean) => Promise<void>;
             scrollToLine: (
                 cursorPosition?: CursorPosition,
                 scrollLine?: number,
@@ -146,7 +141,7 @@ let autoUpdateTimeoutId: null | number = null;
 // Store the lexer info for the currently-loaded language.
 //
 // <a id="currentMetadata"></a>This mirrors the data provided by the server --
-// see [SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
+// <xref ref="SourceFileMetadata"></xref>.
 let currentMetadata: {
     mode: string;
 };
@@ -239,15 +234,19 @@ const openLp = async (
     scrollLine?: number,
 ) =>
     // Wait for the DOM to load before opening the file.
-    await new Promise<void>((resolve) =>
+    await new Promise<void>((resolve, reject) =>
         onDomContentLoaded(async () => {
-            await _openLp(
-                codechatForWeb,
-                isReTranslation,
-                cursorPosition,
-                scrollLine,
-            );
-            resolve();
+            try {
+                await _openLp(
+                    codechatForWeb,
+                    isReTranslation,
+                    cursorPosition,
+                    scrollLine,
+                );
+                resolve();
+            } catch (err) {
+                reject(err);
+            }
         }),
     );
 
@@ -272,15 +271,15 @@ const doDebug = () => {
 // function transforms the code and doc blocks into HTML and updates the current
 // web page with the results.
 const _openLp = async (
-    // A data structure provided by the server, containing the source and
-    // associated metadata. See [`AllSource`](#AllSource).
+    // Most of the <xref ref="cc-ptvg8NGyDX"></xref> data structure provided by
+    // the server, containing the source and associated metadata.
     codechatForWeb: CodeChatForWeb,
     isReTranslation: boolean,
     cursorPosition?: CursorPosition,
     scrollLine?: number,
 ) => {
     // Note that globals, such as `isDirty` and document contents, may change
-    // between `await` calls. The only call to `await` is based on TinyMCE init,
+    // between `await` calls. The only calls to `await` are for initialization,
     // which should only cause an async delay on its first execution. So, we
     // should be OK for the rest of this function.
     //
@@ -316,6 +315,8 @@ const _openLp = async (
         // Get the mode from the page's query parameters. Default to edit using
         // the
         // [nullish coalescing operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator).
+        //
+        // TODO: this is unused until view-only mode is implemented.
         const mode = urlParams.get("mode") ?? EditorMode[EditorMode.edit];
         // `EditorMode` is a numeric enum, so indexing it by the mode name
         // yields the matching enum value, or `undefined` for an unknown name.
@@ -464,44 +465,55 @@ const saveLp = async (
 
     // Add the contents only if the document is dirty.
     if (isDirtyNow) {
-        /// @ts-expect-error("Declare here; it will be completed later.")
-        let codeMirrorDiffable: CodeMirrorDiffable = {};
-        if (isDocOnly()) {
-            // Untypeset all math before saving the document.
-            const codechatBody = document.getElementById("CodeChat-body");
-            assert(codechatBody instanceof HTMLDivElement);
-            mathJaxUnTypeset(codechatBody);
-            // Use a try/finally to ensure that the document is retypeset even
-            // if errors occur.
-            try {
-                // To save a document only, simply get the HTML from the only
-                // Tiny MCE div. Update the `doc_contents` to stay in sync with
-                // the Server.
-                docContent = tinymceInstance()!.save({ format: "raw" });
-                // The `save()` flushes any duplicate `Dirty` events. After
-                // this, following `Dirty` events are genuine.
-                ignoreTinyMceDirty = false;
-                (
-                    codeMirrorDiffable as {
-                        Plain: CodeMirror;
-                    }
-                ).Plain = {
-                    doc: docContent,
-                    doc_blocks: [],
-                };
-            } finally {
-                // Retypeset all math after saving the document.
-                await mathJaxTypeset(codechatBody);
+        try {
+            // Everything dirty so far is about to be copied into this
+            // update. Clear the flag now, before any await, so that an
+            // edit made while MathJax retypesets below marks the
+            // document dirty again.
+            setIsDirty(false);
+            /// @ts-expect-error("Declare here; it will be completed later.")
+            let codeMirrorDiffable: CodeMirrorDiffable = {};
+            if (isDocOnly()) {
+                // Untypeset all math before saving the document.
+                const codechatBody = document.getElementById("CodeChat-body");
+                assert(codechatBody instanceof HTMLDivElement);
+                mathJaxUnTypeset(codechatBody);
+                // Use a try/finally to ensure that the document is retypeset
+                // even if errors occur.
+                try {
+                    // To save a document only, simply get the HTML from the
+                    // only Tiny MCE div. Update the `doc_contents` to stay in
+                    // sync with the Server.
+                    docContent = tinymceInstance()!.save({ format: "raw" });
+                    // The `save()` flushes any duplicate `Dirty` events. After
+                    // this, following `Dirty` events are genuine.
+                    ignoreTinyMceDirty = false;
+                    (
+                        codeMirrorDiffable as {
+                            Plain: CodeMirror;
+                        }
+                    ).Plain = {
+                        doc: docContent,
+                        doc_blocks: [],
+                    };
+                } finally {
+                    // Retypeset all math after saving the document.
+                    await mathJaxTypeset(codechatBody);
+                }
+            } else {
+                codeMirrorDiffable = codeMirrorSave();
+                assert("Plain" in codeMirrorDiffable);
             }
-        } else {
-            codeMirrorDiffable = codeMirrorSave();
-            assert("Plain" in codeMirrorDiffable);
+            update.contents = {
+                metadata: currentMetadata,
+                version: rand(),
+                source: codeMirrorDiffable,
+            };
+        } catch (err) {
+            // If the save fails, mark the now unused data as dirty.
+            setIsDirty(true);
+            throw err;
         }
-        update.contents = {
-            metadata: currentMetadata,
-            version: rand(),
-            source: codeMirrorDiffable,
-        };
     }
 
     return update;
@@ -516,9 +528,16 @@ export const saveSelection = () => {
     // the li's children (a text node where the actual click landed; the offset
     // in this node is placed in `selectionOffset`.)
     const sel = window.getSelection();
+    // If there's no selection, return the values to indicate this.
+    if (sel === null || sel.anchorNode === null) {
+        return {
+            selectionPath: [],
+            selectionOffset: undefined,
+        };
+    }
     const selectionPath = [];
-    const selectionOffset = sel?.anchorOffset;
-    if (sel?.anchorNode) {
+    const selectionOffset = sel.anchorOffset;
+    if (sel.anchorNode) {
         // Find a path from the selection back to the containing div.
         for (
             let currentNode = sel.anchorNode;
@@ -636,7 +655,6 @@ const sendUpdate = async (onlyIfDirty: boolean = false) => {
     );
     // Don't wait for a response to change `isDirty`; this boogers up logic.
     webSocketComm().sendMessage({ Update: await saveLp(getIsDirty()) });
-    setIsDirty(false);
 };
 
 // ### Auto update feature
@@ -765,16 +783,16 @@ export const followLink = (
     } else if (link.origin === window.location.origin) {
         // This is a link to a CodeChat Editor file, so load it as such. Ignore
         // the "new tab" target, which doesn't make sense when there is a 1:1
-        // relationship between the active IDE file and the file being edited
-        // in the CodeChat Editor. If two tabs are open, which is the current
-        // file for the IDE?
+        // relationship between the active IDE file and the file being edited in
+        // the CodeChat Editor. If two tabs are open, which is the current file
+        // for the IDE?
         saveThenNavigate(new URL(link.href));
     } else if (isVsCode()) {
         // This is an external link, which VSCode will block, since it's
         // cross-origin (the root iframe has no URL, in contrast with the
         // localhost URL of the CodeChat Editor Server). Ask the Server to open
         // it instead.
-        parent.window.CodeChatEditorFramework.webSocketComm.sendMessage({
+        webSocketComm().sendMessage({
             OpenUrl: link.href,
         });
     } else {
@@ -793,14 +811,13 @@ const saveThenNavigate = (codeChatEditorUrl: URL) => {
     const navigate = () => {
         // Avoid recursion!
         window.navigation.removeEventListener("navigate", onNavigate);
-        parent.window.CodeChatEditorFramework.webSocketComm.currentFile(
-            codeChatEditorUrl,
-        );
+        webSocketComm().currentFile(codeChatEditorUrl);
     };
     if (getIsDirty()) {
-        // Navigate after the save completes. If the save fails, still navigate --
-        // otherwise the user is stranded on the current page with only a generic
-        // error toast -- but report the failure so the lost save isn't silent.
+        // Navigate after the save completes. If the save fails, still
+        // navigate -- otherwise the user is stranded on the current page with
+        // only a generic error toast -- but report the failure so the lost save
+        // isn't silent.
         sendUpdate(true).then(navigate, (reason) => {
             showToast(`Error saving before navigation: ${reason}`);
             navigate();
@@ -823,6 +840,7 @@ const scrollToLine = (cursorPosition?: CursorPosition, scrollLine?: number) => {
 // A global error handler: this is called on any uncaught exception.
 export const onError = (event: Event) => {
     let errStr: string;
+    const consoleErrorParams = [event];
     if (event instanceof ErrorEvent) {
         errStr = `${event.filename}:${event.lineno}: ${event.message}`;
         if (event.error?.stack) {
@@ -830,11 +848,11 @@ export const onError = (event: Event) => {
         }
     } else if (event instanceof PromiseRejectionEvent) {
         const reason = event.reason;
+        consoleErrorParams.push(reason);
         let userMessage = "An unexpected error occurred. Please try again.";
-        console.log(reason, reason instanceof Error, typeof reason);
         // A simple `reason instanceof Error` fails here. Better would be
         // [Error.isError()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/isError),
-        // but this requires es2027.
+        // but this needs newer browser support than this project targets.
         if (typeof reason?.message === "string") {
             // Extracts the text from `reject(new Error('Your text'))`.
             userMessage = reason.message;
@@ -843,14 +861,14 @@ export const onError = (event: Event) => {
             userMessage = reason;
         }
         errStr = `Promise rejected: ${userMessage}`;
-        if (reason instanceof Error && reason.stack) {
+        if (typeof reason?.stack === "string") {
             errStr += `\n${reason.stack}`;
         }
     } else {
-        errStr = `Unexpected error ${typeof event}: ${event}`;
+        errStr = `Unexpected error ${event.type}: ${event}`;
     }
     showToast(errStr);
-    console.error(event);
+    console.error(consoleErrorParams);
 };
 
 // Load the dynamic content into the static page. Place this last, since we need

@@ -356,6 +356,7 @@ pub enum IdeType {
     Other,
 }
 
+/// <h3 id="cc-ptvg8NGyDX"><code>UpdateMessageContents</code></h3>
 /// Contents of the `Update` message.
 #[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export, optional_fields)]
@@ -1365,12 +1366,11 @@ pub fn client_websocket<S: BuildHasher + 'static>(
         let mut close_reason: Option<CloseReason> = None;
         // True if a ping was sent, but a matching pong wasn't yet received.
         let mut sent_ping = false;
-        // Ping on a fixed schedule, rather than after a quiet period, so that
-        // a steady stream of outgoing messages can't put off the ping, and
-        // with it the detection of a broken websocket, indefinitely. A send
-        // which stalls the loop past a tick mustn't produce a burst of
-        // catch-up ticks, which would close the websocket before its pong
-        // could arrive.
+        // Ping on a fixed schedule, rather than after a quiet period, so that a
+        // steady stream of outgoing messages can't put off the ping, and with
+        // it the detection of a broken websocket, indefinitely. A send which
+        // stalls the loop past a tick mustn't produce a burst of catch-up
+        // ticks, which would close the websocket before its pong could arrive.
         let mut ping_interval =
             interval_at(Instant::now() + WEBSOCKET_PING_DELAY, WEBSOCKET_PING_DELAY);
         ping_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -1477,8 +1477,8 @@ pub fn client_websocket<S: BuildHasher + 'static>(
                         // sending a Close frame with an
                         // [appropriate status code](https://www.rfc-editor.org/rfc/rfc6455#section-7.4.1).
                         // The stream may also report the same error on every
-                        // poll, which, since this branch is polled first,
-                        // would starve the others.
+                        // poll, which, since this branch is polled first, would
+                        // starve the others.
                         Err(err) => {
                             error!("websocket receive error {err:?}");
                             close_reason = Some(CloseCode::Protocol.into());
@@ -1755,8 +1755,8 @@ fn make_app_data_with_capture_spool(
         connection_id: Mutex::new(HashSet::new()),
         credentials,
         capture,
-        // There are no connections yet; `translation_task` resizes this as
-        // they come and go.
+        // There are no connections yet; `translation_task` resizes this as they
+        // come and go.
         cache: Arc::new(Mutex::new(LruCache::new(cache_map_capacity(0)))),
     })
 }
