@@ -22,8 +22,8 @@
 //! See `overall/common/mod.rs` for the shared test harness.
 //!
 //! To run these tests, execute `cargo nextest run --test overall
-//! <optional_test_name>`; `.config/nextest.toml` runs them one at a time.
-//! `cargo test` ignores that file and runs them concurrently.
+//! <optional_test_name>`; `.config/nextest.toml` limits how many run in
+//! parallel.
 // This whole binary is test code, so relax the pedantic Clippy lints that the
 // `[workspace.lints.clippy]` section in `Cargo.toml` enables for production
 // code.

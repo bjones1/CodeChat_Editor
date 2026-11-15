@@ -402,7 +402,9 @@ async fn test_ide_update_not_echoed_core(
     tinymce_contents.wait_until().clickable().await.unwrap();
 
     // Replace the doc block's text from the IDE, then wait for TinyMCE to show
-    // it.
+    // it. The click above may produce more than one cursor-only update; on a
+    // loaded machine, the autosave delay may not merge them, so the Client may
+    // send another before its reply.
     let ide_id = codechat_server
         .send_message_update_plain(
             path_str.clone(),
@@ -413,7 +415,7 @@ async fn test_ide_update_not_echoed_core(
         .await
         .unwrap();
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await,
         EditorMessage {
             id: ide_id,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
@@ -483,7 +485,8 @@ async fn test_ide_update_not_echoed_doc_only_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Replace the document's text from the IDE, then wait for TinyMCE to show
-    // it.
+    // it. As in `test_ide_update_not_echoed_core`, cursor-only updates from the
+    // click may precede the Client's reply.
     let ide_id = codechat_server
         .send_message_update_plain(
             path_str.clone(),
@@ -494,7 +497,7 @@ async fn test_ide_update_not_echoed_doc_only_core(
         .await
         .unwrap();
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await,
         EditorMessage {
             id: ide_id,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
