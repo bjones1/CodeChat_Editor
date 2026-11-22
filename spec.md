@@ -161,49 +161,84 @@ tag (ASCII case-insensitive):
   and doc block separator lines.
 * **`<xref>`:** Multi-line `<xref>` elements may receive an inner tag, which
   hydration removes (<xref ref="cc-e7tpKZV9sK"></xref>).
+* **Hand-written math and diagram HTML:** Tags emitted inside raw math spans,
+  `<pre>`/`<code>`, `wc-mermaid`, or `graphviz-graph` are removed before
+  hydration, with adjacent text nodes merged
+  (<xref ref="cc-e7tpKZV9sK"></xref>).
 * **Sidebar TOC:** `source_to_codechat_for_web` omits tags when `is_toc` is
   `true`, and includes them when opened as the current file (`is_toc` is `false`).
 
 
 <h2 id="cc-dl60mkSR4A">Source line offsets</h2>
 
-To map a byte offset in `markdown_to_html` input to a 1-based source line (`Option<usize>`):
-1. Binary-search line-start byte offsets for the 0-based Markdown line $m$
-   (split on `\n`; `\r` stays with the line it terminates).
+To map a byte offset in `markdown_to_html` input to a 1-based source line
+(`Option<usize>`):
+1. Scan the exact input bytes to record line-start offsets, beginning with
+   `0`. LF (`\n`), lone CR (`\r`), and CRLF (`\r\n`) each end one line;
+   record the next start after the entire terminator. Binary-search these
+   offsets for the 0-based Markdown line $m$. Do not normalize this input
+   after recording offsets: they must match `into_offset_iter`'s byte ranges.
 2. Translate $m$ to a source line:
 
 * **Markdown documents:** Return `Some(m + 1)`.
 * **Source files:** `source_to_codechat_for_web` concatenates separators and
-  doc block contents into `doc_contents`. Because separators shift line
-  numbers and the lexer strips leading/trailing block comment delimiter lines
-  (`/*` and `*/`—dedenting only strips columns, so internal lines map 1:1),
-  `DocBlock` adds `contents_line_offset` ($o_i$):
-  * $o_i = 1$ if an opening block comment delimiter is immediately followed by a
-    stripped newline; `0` otherwise (and `0` in
-    `code_mirror_to_code_doc_blocks`).
-  * Lexer tests must assert $o_i + c_i \le h_i$ for every doc block.
+  doc block contents into `doc_contents`. Both lexer paths normalize source
+  line endings to LF before extracting comments. They must retain the
+  original source height and a mapping for every retained content line:
+  * `DocBlock.lines` is the number of lines in the full normalized source span
+    consumed by that block, including delimiter-only lines and empty comments.
+    Compute it before stripping delimiters or dedenting, using
+    `source_span.split_inclusive('\n').count()`. Apply this to the regex lexer
+    and the Pest parser in `server/src/lexer/pest_parser.rs`; neither may
+    derive source height from processed contents. A non-empty final span
+    without a trailing newline still occupies a line.
+  * Add `DocBlock::contents_line_offsets: Vec<usize>`. Entry $s_i[k]$ is the
+    0-based source-line offset, relative to this doc block's start, of content
+    line $k$. Construct it from retained source spans as delimiters and
+    indentation are removed. A retained blank line maps to the source line
+    supplying its newline; empty contents have an empty map.
+  * When adjacent comments merge, add the accumulated source height to each
+    incoming content-line offset before appending its map, then add the
+    incoming source height. Removed delimiter lines may create gaps in the
+    map; one initial offset cannot represent them.
+  * This metadata is valid only for source-to-HTML translation. Set the map
+    to an empty vector in `code_mirror_to_code_doc_blocks`, where source
+    heights are already invalid and neither is consulted.
 
 For doc block $i$ in `code_doc_block_arr`, 0-based content line $k$
-($0 \le k < c_i$, where $c_i = \text{contents.split\_inclusive('\textbackslash n').count()}$)
-maps to source line:
+($0 \le k < c_i$, where $c_i$ is
+`contents.split_inclusive('\n').count()`) maps to source line:
 
-$$L = 1 + \sum_{j < i} h_j + o_i + k$$
+$$L = 1 + \sum_{j < i} h_j + s_i[k]$$
 
-where $h_j$ is `code_doc_block_lines` of block $j$ (code or doc).
+Here $h_j$ is `code_doc_block_lines` of block $j$ (code or doc), using the
+corrected source heights. Lexer tests must assert that the map length equals
+$c_i$, entries are strictly increasing and less than $h_i$, and the sum of
+all block heights equals the normalized source's
+`split_inclusive('\n').count()`. This count excludes the empty line after a
+final newline.
 
 While folding blocks into `doc_contents`, record each block's segment
-`(start_md_line, c_i, L_0)`. To resolve Markdown line $m$:
+`(start_md_line, source_lines)`, where `source_lines[k]` is $L$ above. Compute
+`start_md_line` from the actual accumulated text after appending that block's
+separator and before appending its contents; a preceding block without a final
+newline must not create a fictitious extra line. To resolve Markdown line $m$:
 1. Find the last segment with $\text{start\_md\_line} \le m$; set
    $k = m - \text{start\_md\_line}$.
-2. If no segment exists or $k \ge c_i$, $m$ is a separator line $\rightarrow$
-   return `None`.
-3. Otherwise return `Some(L_0 + k)`.
+2. If no segment exists or $k$ is outside `source_lines`, $m$ is a separator
+   line $\rightarrow$ return `None`.
+3. Otherwise return `Some(source_lines[k])`.
 
 | Source line | Text | Block | Calculation |
 | :--- | :--- | :--- | :--- |
 | 1 | `int x;` | 0: code ($h_0 = 1$) | — |
-| 2–3 | `// Intro text\n// continues.` | 1: doc ($h_1 = 2, o_1 = 0$) | Lines 2, 3 |
-| 4–6 | `/*\n   Block text.\n */` | 2: doc ($h_2 = 3, o_2 = 1$) | $1 + (1 + 2) + 1 + 0 = 5$ |
+| 2–3 | `// Intro text\n// continues.` | 1: doc ($h_1 = 2$) | $s_1 = [0, 1]$: lines 2, 3 |
+| 4–6 | `/*\n   Block text.\n */` | 2: doc ($h_2 = 3$) | For `Block text.`, $s_2[k] = 1$: $1 + (1 + 2) + 1 = 5$ |
+
+For adjacent comments `/*\nFirst\n*/\n/*\nSecond\n*/\n`, a merged doc block
+occupies six source lines. `First` has source-line offset `1` and `Second`
+has offset `4`, so their tags are `2` and `5` regardless of which blank lines
+the lexer retains in the contents.
 
 
 <h2 id="cc-e7tpKZV9sK">Sanitization & hydration</h2>
@@ -225,7 +260,17 @@ Hydration invariants:
 * `hydrate_dom` strips `<l-n>` inside `<xref>` during `hoist_fragment_content`, before `hydrate_source_xref` captures `data-content` for dehydration (<xref ref="cc-HZyE2Bv-eI"></xref>).
 * `<l-n>` inside `<fragment>` is naturally moved after the fragment by `hoist_fragment_content`.
 * Hydrated gather lists hold cleaned fragment HTML and never contain `<l-n>`.
-* Mermaid, GraphViz, and math elements retain the single text child required by `hydrate_child`.
+* At the start of `hydrate_dom`, before `hoist_fragment_content`, fact
+  collection, or any call to `hydrate_child` or `replace_math_node`, remove
+  every descendant `<l-n>` and its content from `<pre>`, `<code>`,
+  `wc-mermaid`, `graphviz-graph`, and math spans whose `class` is
+  `math math-inline` or `math math-display`. Use the same subtree removal and
+  merging of adjacent text nodes required by the dehydration pre-pass. Select
+  these containers by tag and class before inspecting their children.
+  Placement can insert tags inside hand-written HTML even though Markdown
+  code blocks and math events keep their generated wrappers free of tags.
+  This cleanup preserves the single text child of otherwise valid math and
+  diagram content without removing tags elsewhere in the document.
 
 
 ### Dehydration
@@ -255,9 +300,10 @@ format and define what Client consumers must tolerate.
 <h2 id="cc-wPpJhnQKLq">Testing</h2>
 
 Use unit tests in `server/src/processing/tests.rs`,
-`server/src/lexer/tests.rs`, and `translation.rs`'s `mod tests` (where the
-private `compare_html` is reachable); don't add browser tests to `overall.rs`
-(they are slow). The Client test below is the only exception: it runs in
+`server/src/lexer/tests.rs`, `server/src/lexer/pest_parser.rs`'s test module,
+and `translation.rs`'s `mod tests` (where the private `compare_html` is
+reachable); don't add browser tests to `overall.rs` (they are slow). The
+Client test below is the only exception: it runs in
 the browser harness, as `CodeChatEditor-test.mts` already does. Tests not about
 line numbers should compare HTML after deleting tags with
 `strip_line_number_tags`. Existing exact-HTML assertions outside these files
@@ -278,11 +324,29 @@ Required cases:
   front matter; each raw-text element, `template`, and `select` opened by inline
   HTML across lines, including a close in a later paragraph; multi-line `<xref>`
   whose `data-content` holds no tag.
-* <strong>Line offsets:</strong> Markdown document with CRLF endings; source
-  file mixing inline and block comments, with `/*` on its own line, an
-  unterminated fence in one doc block, an empty doc block, and a final doc block
-  without trailing newline. Each tag must equal $L$ from
+* <strong>Lexer metadata:</strong> In both the regex and Pest lexer tests,
+  assert source heights and content-line maps against original source spans,
+  including delimiter-only lines, empty comments, adjacent block comments,
+  and a final block without a newline. Check map lengths, ordering, bounds,
+  and total source height as specified in
   <xref ref="cc-dl60mkSR4A"></xref>.
+* <strong>Line offsets:</strong> Markdown documents with LF, CRLF, lone CR,
+  and mixed line endings; `a\rsecond\rthird` must receive tags `1`, `2`, and
+  `3`. A source file mixing inline and block comments must cover `/*` on its
+  own line, an unterminated fence in one doc block, an empty doc block, and a
+  final doc block without a trailing newline. Each tag must equal $L$ from
+  <xref ref="cc-dl60mkSR4A"></xref>. In JavaScript (regex lexer) and C/C++
+  (Pest lexer), `/*\nA\n*/\n// B\n` must tag `B` as line `4`, and
+  `/*\nFirst\n*/\n/*\nSecond\n*/\n` must tag `First` and `Second` as `2`
+  and `5`, including when the comments merge.
+* <strong>Hydration cleanup:</strong> Translate
+  `A <span class="math math-inline">x\ny</span>.` through
+  `source_to_codechat_for_web`. It must hydrate to delimited, non-editable
+  math with one text child and no inner `<l-n>`, while retaining the tag
+  before `A`. Repeat for `math math-display` and hand-written multiline
+  Mermaid/GraphViz `<pre><code class="language-...">` and custom-element
+  HTML. Verify the diagram wrappers and text match translation without line
+  tags, and stored target and fragment content also stay free of inner tags.
 * <strong>Sanitization and dehydration:</strong> `minify` keeps each tag and
   adjacent whitespace; stored target inner HTML and fragment content hold no
   tags; every existing round-trip test still reproduces its source; an `l-n`
@@ -317,8 +381,18 @@ Required cases:
 Implementation checklist
 ------------------------
 
-1. `server/src/lexer.rs`: Compute `DocBlock::contents_line_offset`.
-2. `server/src/processing.rs`: Implement line map/segments, `markdown_to_html` tag injection + warnings, Ammonia allowlists (`AMMONIA_OPTIONS`, `CLEAN_LINK_CONTENT_HTML`, `CLEAN_FRAGMENT_HTML`), `<xref>` tag stripping in `hydrate_dom`, the `<l-n>` removal pre-pass before `dehydrating_walk_node`, and `strip_line_number_tags`.
+1. `server/src/lexer.rs` and `server/src/lexer/pest_parser.rs`: Compute
+   `DocBlock.lines` from full normalized source spans and add
+   `DocBlock::contents_line_offsets`, preserving offsets and heights when
+   merging adjacent comments. Initialize the reverse-translation map in
+   `code_mirror_to_code_doc_blocks` to an empty vector.
+2. `server/src/processing.rs`: Implement the LF/CRLF/lone-CR byte-to-line map,
+   per-block source-line segments, `markdown_to_html` tag injection and
+   warnings, and Ammonia allowlists (`AMMONIA_OPTIONS`,
+   `CLEAN_LINK_CONTENT_HTML`, `CLEAN_FRAGMENT_HTML`). Add tag removal and text
+   merging inside math and diagram containers before hydration, `<xref>` tag
+   stripping in `hydrate_dom`, the `<l-n>` removal pre-pass before
+   `dehydrating_walk_node`, and `strip_line_number_tags`.
 3. `server/src/translation.rs`: Update `compare_html` to call `strip_line_number_tags`.
 4. `client/src/tinymce-config.mts` & `client/src/css/CodeChatEditor.css`: Configure TinyMCE custom elements and unlayered `display: none`.
 5. Tests: Add coverage for the changes above (per <xref ref="cc-wPpJhnQKLq"></xref>).
