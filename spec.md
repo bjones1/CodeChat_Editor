@@ -49,8 +49,10 @@ In `markdown_to_html` output:
   untagged line. Leading content before the first tag (HTML blocks, fenced code,
   doc block separators) maps to no line.
 * <strong>Omitted tags:</strong> Lines with no inline content, opaque content,
-  or continuing an inline event from an earlier line
-  (<xref ref="cc-4KkOVSDENA"></xref>) get no tag.
+  or only the continuation of an inline event from an earlier line
+  (<xref ref="cc-4KkOVSDENA"></xref>) get no tag. (If new inline content
+  follows a multi-line span on that same line, a tag is placed before that new
+  content.)
 * <strong>Monotonicity:</strong> `N` is strictly increasing; skipped lines are
   allowed.
 * <strong>Lookup rule:</strong> Within a single container (Markdown body or one
@@ -68,10 +70,9 @@ In `markdown_to_html` output:
   class="cc-line-number">` (used for gathered fragment gutters). The Client must
   never call `customElements.define` on it.
 * <strong>Hand-written tags:</strong> `l-n` is reserved. Any `l-n` start tag
-  (ASCII case-insensitive) in an `InlineHtml` or `Html` event triggers a
-  non-blocking warning (matching `parse_doc_block`'s hidden-text warning),
-  renders normally, and is stripped (along with its content) during dehydration
-  on the next save.
+  (ASCII case-insensitive) in an incoming `InlineHtml` or `Html` event (checked
+  before tag injection) triggers a non-blocking warning (unlike `parse_doc_block`'s hidden-text check, which rejects translation),
+  renders normally, and is stripped (along with its content) during dehydration on the next save.
 
 <h2 id="cc-gpOIpo2gjZ">Placement</h2>
 
@@ -90,7 +91,7 @@ byte-offset-to-line map (<xref ref="cc-dl60mkSR4A"></xref>).
 Insert `<l-n>N</l-n>` before a trigger **iff**:
 1. Opaque depth is `0` and raw-text suppression is inactive
    (<xref ref="cc-4KkOVSDENA"></xref>);
-2. The byte offset maps to a valid source line `N`; and
+2. The event's `range.start` maps to a valid source line `N`; and
 3. `N` is strictly greater than the last emitted tag's line.
 
 **Excluded events (non-triggers):**
@@ -133,22 +134,22 @@ none inside); its matching `End` decrements it. No tags emit while depth $> 0$.
 | :--- | :--- |
 | `Tag::CodeBlock` | `Text` events ignore line boundaries; `hydrate_child` requires a single text node for Mermaid/GraphViz; syntax highlighters read `innerHTML`; `DOC_BLOCK_SEPARATOR_*` markers must match. |
 | `Tag::Image` | Inner events serialize into the `alt` attribute. |
-| `Tag::HtmlBlock` | Emits one `Html` event per line; tags could corrupt tags, comments, `<textarea>`/`<script>`, or doc block separators. |
+| `Tag::HtmlBlock` | Contains only non-trigger `Html` events (raw-text suppression handles any tags left open when the block ends). |
 | `Tag::MetadataBlock` | Unrendered, though events still pass through the writer. |
 
-**Raw-text suppression:** When an `InlineHtml` event opens one of the tags below
-without closing it in the same event, suppress tag emission across block
-boundaries until an `Html` or `InlineHtml` event contains the matching closing
-tag (ASCII case-insensitive):
-* **Raw-text elements** (`script`, `style`, `textarea`, `title`, `xmp`,
-  `iframe`, `noembed`, `noframes`, `noscript`, `plaintext`): html5ever parses
-  their contents as literal text, which dehydration cannot strip. `plaintext`
-  never closes, suppressing until EOF (`parse_doc_block` already warns on
-  hidden text).
-* **`template`:** Contents live in a `DocumentFragment` outside normal child
-  traversal, so dehydration skips them.
-* **`select`:** html5ever strips unknown start tags inside `<select>` while
-  leaving the text digits behind.
+**Raw-text suppression:** CommonMark can end an `HtmlBlock` at a blank line or container boundary while a tag or comment is still open. Because `html5ever` parses the contents of the constructs below as literal text or separate fragments, dehydration cannot strip `<l-n>` tags inside them.
+
+Scan incoming `Html` and `InlineHtml` events before injecting `<l-n>` tags (this pass also checks for hand-written `l-n` start tags so generated tags don't trigger warnings). If an event opens a target below without closing it, suppress `<l-n>` emission until a later `Html` or `InlineHtml` event contains its closing sequence (`-->` or an ASCII case-insensitive end tag). Suppression starts and ends *after* the opening or closing event's trigger check (so a closing tag at the start of a line does not get an `<l-n>` tag placed right before it, inside the raw-text element):
+* **Raw-text & foreign elements** (`script`, `style`, `textarea`, `title`, `xmp`, `iframe`, `noembed`, `noframes`, `noscript`, `plaintext`): Parsed as literal text (`plaintext` never closes).
+* **`template`:** Contents live in a `DocumentFragment` outside normal child traversal.
+* **`select`:** `html5ever` strips unknown start tags inside `<select>`, leaving the line-number digits behind.
+* **HTML comments (`<!--`):** Unclosed comments absorb subsequent `<l-n>` tags as comment text.
+
+*(Unclosed elements at a doc-block or document boundary cause `parse_doc_block` to reject the translation, so suppression only needs to handle elements closed later in the same container.)*
+
+
+
+
 
 **Other constructs:**
 * **Tables:** No special handling needed. Each row's tag lands in its first
@@ -157,8 +158,9 @@ tag (ASCII case-insensitive):
   table; dehydration still strips it.)
 * **Untagged lines:** Blank lines, fences, code block lines, thematic breaks,
   setext underlines, link reference definitions, table delimiters, HTML/metadata
-  blocks, continuation lines of multi-line code spans/inline math/inline HTML,
-  and doc block separator lines.
+  blocks, continuation lines of multi-line code spans, inline/display math,
+  inline HTML, or image alt text that contain no subsequent inline events, and
+  doc block separator lines.
 * **`<xref>`:** Multi-line `<xref>` elements may receive an inner tag, which
   hydration removes (<xref ref="cc-e7tpKZV9sK"></xref>).
 * **Hand-written math and diagram HTML:** Tags emitted inside raw math spans,
@@ -314,16 +316,19 @@ compare whole messages, are updated to include the expected tags.
 Required cases:
 
 * <strong>Placement:</strong> paragraph with soft and hard breaks; code span and
-  inline math spanning lines (second line untagged); lines starting with
+  inline math spanning lines (both when ending the line with no tag on line 2,
+  and when followed by text on line 2 with a tag before that text); lines starting with
   emphasis, a link, an image, inline code, and inline math; setext and ATX
   headings; tight, loose, task, and definition lists; block quote; footnote
   definition; table with an empty cell, an all-empty row, and a header row.
 * <strong>Exceptions:</strong> fenced code closed with backticks or tildes,
   unterminated fences, indented code; Mermaid and GraphViz still hydrate; image
-  alt text spanning lines; raw HTML blocks, including a multi-line comment;
-  front matter; each raw-text element, `template`, and `select` opened by inline
-  HTML across lines, including a close in a later paragraph; multi-line `<xref>`
-  whose `data-content` holds no tag.
+  alt text spanning lines; raw HTML blocks; front matter; each raw-text element,
+  `template`, `select`, and HTML comment opened by inline HTML or an HTML block
+  and closed across lines, blank lines, or container boundaries, including a
+  closing tag at the start of a line (such as `<textarea>a\n</textarea> b`, where
+  `<l-n>2</l-n>` must appear after `</textarea>`); multi-line `<xref>` whose
+  `data-content` holds no tag.
 * <strong>Lexer metadata:</strong> In both the regex and Pest lexer tests,
   assert source heights and content-line maps against original source spans,
   including delimiter-only lines, empty comments, adjacent block comments,
