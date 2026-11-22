@@ -1,229 +1,196 @@
-Review of "Placement" (spec.md, lines 88–183)
-=============================================
+Review of "Tag format & lookup" and "Placement" (spec.md, lines 39–194)
+=====================================================================
 
 Scope
 -----
 
-This review covers only the `<h2 id="cc-gpOIpo2gjZ">Placement</h2>` section
-(spec.md:88–183), including its subsections "Trigger rules", "Example", and
-"Exceptions". Other sections were read only for context, or are cited where
-they conflict with this one. Claims about existing code were checked against
-the `line-number-support-2` branch: `server/src/processing.rs`
-(`markdown_to_html`, `source_to_codechat_for_web`, the
-`DOC_BLOCK_SEPARATOR_*` constants, `doc_blocks_to_dom`, `parse_doc_block`,
-`html_to_dom`) and `client/src/CodeMirror-integration.mts`. CommonMark
-behavior was checked against the 0.31.2 spec that `processing.rs` cites.
-Nothing was built or run.
+This review covers `<h2 id="cc-T4yjQxfetF">Tag format &amp; lookup</h2>`
+(spec.md:39–86) and `<h2 id="cc-gpOIpo2gjZ">Placement</h2>` (spec.md:88–194),
+read together. Other sections were read only for context. Claims about the
+code were checked against the `line-number-support-2` branch:
+`server/src/processing.rs` (`markdown_to_html`, `source_to_codechat_for_web`,
+the `DOC_BLOCK_SEPARATOR_*` constants, `doc_blocks_to_dom`,
+`parse_doc_block`, `render_fragment_content`), `server/Cargo.toml`, and
+`Cargo.lock`, which pins pulldown-cmark 0.13.6 (its `html.rs` writer was
+read). Nothing was built or run.
 
 Summary
 -------
 
-All seven round 2 findings are fixed. The trigger rules, the opaque-depth
-counter, and the check-then-toggle order for raw-text suppression are sound.
-This round found four real problems:
+All six findings from the previous round are fixed. Four problems remain:
 
-* Placement makes `<l-n>` the first child of nearly every block, and the
-  Client's existing caret code walks `firstChild` down to the first text
-  node. Entering a doc block from above puts the caret inside the hidden tag,
-  so typed text is invisible and deleted on save.
-* Raw-text suppression is never reset. One false-positive opener (an
-  attribute value, or markup inside a comment) silently drops every later tag
-  in the document, or in every later doc block of a source file. The
-  parenthesis that is meant to rule this out is inaccurate.
-* The scanner's matching rules are undefined. A naive scan gets the empty
-  comments `<!-->` and `<!--->` wrong, and those trigger the drop above.
-* The section's key example of a closing tag at the start of a line,
-  `<textarea>a\n</textarea> b`, is a CommonMark HTML block, so it never goes
-  through the rule it is meant to test.
-
-The remaining findings are about the `markdown_to_html` signature and wording.
+* The regexes in both sections use lookahead, which the project's only regex
+  crate (`regex = "1"`) rejects. They also use Unicode `\s` and Unicode case
+  folding, so the scanner can decide a raw-text element has closed when
+  html5ever hasn't. Tags then land inside RCDATA, where dehydration can't
+  strip them, so they get saved.
+* An opener inside an inline HTML attribute value still turns suppression on.
+  In a Markdown document, nothing resets it before the end of the input. In
+  one ordering it also gets the scanner out of step with html5ever and
+  corrupts saved text.
+* The suppression reset at doc block separators doesn't say where it happens,
+  and the required warning has no source line to report.
+* `LineMap` is part of the new signature but is defined nowhere.
 
 Findings
 --------
 
-~~### 1. Every block's first text node is now hidden, and the Client puts the caret there (important)~~
+~~### 1. The regexes can't compile, and their Unicode matching disagrees with html5ever (moderate)~~
 
-The trigger rules put the tag *inside* `<p>`, `<h1>`, `<li>`, `<td>`, and so
-on, before the first inline content (spec.md:108–113). Doc block HTML
-therefore almost always starts `<p><l-n>N</l-n>…`.
+The hand-written-tag regex `(?i)<(/?l-n(?=[\s/>]))` (spec.md:81) and the
+scanner's opener and closer patterns (spec.md:165, 168) all use `(?=…)`.
+`server/Cargo.toml:84` depends only on `regex = "1"`. That crate has no
+lookaround, so `Regex::new` fails, and the `LazyLock::new(|| …unwrap())`
+pattern used for every other regex in `processing.rs` would panic the first
+time it runs. `Cargo.lock` has no `fancy-regex`.
 
-`CodeMirror-integration.mts:1238–1270` handles the caret moving into a doc
-block from the line above. It descends `contents.firstChild` until it reaches
-a text node, then calls `range.setStart(edgeNode, 0)`. With tags present, that
-text node is the digits inside `<l-n>`. The comment there explains that
-TinyMCE keeps this selection after it initializes. So the user's first
-keystrokes go into the `l-n` element: they are hidden by
-`l-n { display: none; }`, and the dehydration pre-pass deletes them along
-with the tag on the next save. The Sanitization table says the CSS rule
-"block[s] caret entry" (spec.md:269). That holds for caret movement by the
-browser, but not for a range set by script.
+Getting rid of the lookahead isn't enough by itself. With the `regex` crate's
+default Unicode mode, the patterns match things html5ever doesn't:
 
-The end-of-block branch (`lastChild`) is safe, because a tag is never the last
-child of its line. Any other Client code that picks "the first text node" has
-the same problem.
+* `\s` matches U+000B and U+00A0, among others. html5ever ends a tag name
+  only at tab, LF, FF, space, `/`, or `>`.
+* `(?i)` uses simple case folding, so `s` also matches U+017F (`ſ`). html5ever
+  lowercases only ASCII.
 
-**Suggest:** Add a rule to the spec, and an entry to the implementation
-checklist: Client code that chooses a caret position must skip `l-n`
-subtrees. In the code above, that means a walk that ignores `l-n` elements
-when it looks for the first text node. Extend the Client test (spec.md:393)
-so that it enters a tagged doc block from above, types a character, and
-checks that the character is visible and survives a save.
+If this happens on an opener, the only effect is missing tags. If it happens
+on a closer, the result is corruption. Take `x <textarea>a` followed on the
+next line by `</textarea\u{A0}>b c`. The scanner sees a closer and ends
+suppression. html5ever is still in RCDATA, so the tag placed before `b` is
+textarea text. The dehydration pre-pass can't remove it, and the literal
+`<l-n>2</l-n>` is saved.
 
-~~### 2. Suppression is never reset, so a false positive silently drops all later tags (important)~~
+**Suggest:** Give the patterns in a form the `regex` crate accepts, with ASCII
+semantics. For example, `(?i-u)<(/?l-n)([\t\n\x0C\r />])` replaced with
+`&lt;$1$2`. Consuming the boundary byte is harmless here: the scanner only
+needs match positions, and the escape writes that byte back. Use the same
+`(?i-u)` and `[\t\n\x0C\r />]` in the opener and closer patterns. (CR can't
+appear after the lexer's normalization, but Markdown documents aren't
+normalized, so keep it.)
 
-The scanner looks at raw `Html`/`InlineHtml` text. Suppression ends only when
-"a later `Html` or `InlineHtml` event contains its closing sequence"
-(spec.md:153). Nothing ends it at a doc block separator or at the end of the
-input. These cases open suppression and never close it:
+~~### 2. An opener in an inline attribute value still disables tags, and can lead to corruption (moderate)~~
 
-* **Attribute values.** `<a title="<select> menu">x</a>` is valid inline
-  HTML. html5ever sees an `a` element, but the scanner sees `<select>`.
-* **Markup inside comments.** `<!-- TODO: add <template> -->`. Whether the
-  scanner ignores openers while a comment is open is unspecified (finding 3).
-* **Empty comments.** See finding 3.
+The reset added in the previous round only works at doc block separators
+(spec.md:173–178). A Markdown document has no separators. So
+`<a title="<select> menu">x</a>` drops every later tag in the document, with
+only a warning at the end of the input. The parenthesis in the spec says the
+reset stops such false positives "from dropping tags in later blocks". For
+Markdown documents, which include `spec.md` itself, that isn't true.
 
-The doc block separator happens to contain
-`</pre></script></style></textarea>-->` (`processing.rs:300`). So false
-positives for `script`, `style`, `textarea`, and comments end at the next
-doc block. False positives for `title`, `xmp`, `iframe`, `noembed`,
-`noframes`, `noscript`, `plaintext`, `template`, and `select` never end. They
-remove every tag from the rest of the Markdown document, or from every later
-doc block in a source file. Nothing warns, and scroll sync and cache line
-facts are lost without any visible error.
+The same false positive can also get the scanner out of step with html5ever
+so that tags land in the wrong place:
 
-The parenthesis at spec.md:159 is meant to rule this out. It says that
-"Unclosed elements at a doc-block or document boundary cause
-`parse_doc_block` to reject the translation". That is true only for elements
-that are actually open in html5ever's DOM (raw-text elements, `select`, and
-`template` all lose the sentinel, so `parse_doc_block` rejects them). It says
-nothing about the scanner's false positives. It is also wrong for comments:
-`parse_doc_block` accepts a sentinel found inside a comment
-(`processing.rs:1635–1637`). Comments are safe only because the separator's
-`-->` ends suppression in the Markdown event stream before
-`DOC_BLOCK_SEPARATOR_REMOVE_FENCE` deletes that `-->` from the HTML.
+```markdown
+<a title="<!--">x</a> <textarea>a
+b <!-- c --> d
+</textarea>
+```
 
-**Suggest:** Reset suppression at every doc block separator. This is safe
-because, as shown above, a real open target cannot cross a separator without
-`parse_doc_block` rejecting the translation. Log a `log::warn!` (with file
-path and line) whenever suppression is still active at a separator or at the
-end of the input, so that a dropped tail is at least visible. Rewrite the
-parenthesis to say why the reset is safe, and mention the comment case.
-Optionally, have the scanner skip quoted attribute values, which removes the
-most common false positive.
+1. The scanner treats the attribute's `<!--` as an open comment, so it skips
+   the real `<textarea>` opener.
+2. It closes the "comment" at `-->` on line 2.
+3. Line 3's `</textarea>` is inline HTML (only an *opening* `<textarea` starts
+   a type 1 HTML block), and suppression is now off, so it gets
+   `<l-n>3</l-n>`. html5ever is still in RCDATA at that point, so the tag
+   becomes textarea text and is saved.
 
-~~### 3. The scanner's matching rules aren't defined (moderate)~~
+**Suggest:** In the Unsuppressed state, accept an opener in an `InlineHtml`
+event only at byte offset 0. pulldown-cmark emits each inline HTML construct
+(one tag, one comment, one processing instruction, and so on) as its own
+`InlineHtml` event. So an opener later in that event is always inside an
+attribute value, and html5ever never treats it as an opener. Keep the current
+anywhere-in-the-event search for closers in `InlineHtml`, because RCDATA and
+raw text end at any `</name`, even one inside a quoted value. Also keep it for
+openers in `Html` events, where one line can hold several tags. Correct the
+parenthesis so it doesn't claim coverage for Markdown documents.
 
-spec.md:153–157 name the targets but not the matching rules. Implementations
-will differ on:
+~~### 3. Where the reset happens and what the warning reports aren't defined (moderate)~~
 
-* **Empty comments.** CommonMark 0.31.2 (§6.6) accepts `<!-->` and `<!--->`
-  as complete inline HTML comments, and html5ever also closes them right
-  away. A scanner that searches for `-->` *after* the `<!--` opener misses
-  both closers, because they overlap the opener. Suppression then starts and
-  never ends (finding 2).
-* **Several transitions in one event.** An `Html` line such as
-  `</textarea><!-- x` closes one target and opens another. "Contains its
-  closing sequence" doesn't say whether the scan continues past the closer.
-* **Openers while suppressed.** Inside a comment or `<textarea>`, a
-  `<script>` has no effect in html5ever. The spec doesn't say whether the
-  scanner ignores it or treats it as a nested opener.
-* **Tag-name boundaries.** html5ever ends a raw-text element at `</name`
-  followed by whitespace, `/`, or `>`, case-insensitively. So
-  `</TEXTAREA >` and `</textarea\n>` close it. An opener must not match
-  `<selection>` or `<titlebar>`. The hand-written-tag rule already gives a
-  regex for this (spec.md:81); this rule has none.
+spec.md:173–175 says to "reset suppression at every doc-block separator" and
+to warn "with the file path and line number". Three things are missing:
 
-**Suggest:** Define the scanner as a two-state machine that runs repeatedly
-over each event. When not suppressed, find the earliest opener matching
-`(?i)<(script|style|…|select)(?=[\s/>])` or `<!--`. When suppressed, look
-*only* for that target's closer: `(?i)</name(?=[\s/>])` for elements, or
-`-->` searched from the first byte of `<!--` (so that `<!-->` and `<!--->`
-count as closed). After a closer, continue scanning the rest of the event.
-Add `<!-->`, `<!--->`, and `</textarea><!--` to the Exceptions tests.
+* **How a separator is recognized.** No pulldown-cmark event marks a
+  separator. The adapter has to match the separator text or use the segment
+  boundaries in the line map. Neither method is named.
+* **Whether the reset happens before or after the separator's own `Html`
+  events are scanned.** The order matters. Line 3 of the separator
+  (`processing.rs:305`) is `</pre></script></style></textarea>-->?>]]>`. If
+  the reset happens when the first `<CodeChatEditor-fence>` line arrives, then
+  any open `script`, `style`, or `textarea` target, or a comment from an HTML
+  block, is still open at that point, so the reset warns. The spec says
+  comments "are closed by the separator itself", and `parse_doc_block`
+  accepts such a comment (`processing.rs:1635–1637`), so this warning is
+  wrong. If the reset happens after the separator has been scanned, those
+  targets close normally and only real false positives warn.
+* **Which line the warning reports.** Every separator line maps to `None`
+  (spec.md:252–253), and end of input has no line. The only line worth
+  reporting is the opener's line.
 
-~~### 4. The section's own example of a closing tag at the start of a line isn't inline HTML (moderate)~~
+**Suggest:** Record the opener's source line when suppression starts and
+report that line in the warning. Reset when the first event at or after the
+next segment's `start_md_line` arrives. At that point all of the separator's
+`Html` events have been scanned. Also reset after the last event.
 
-Raw-text suppression starts and ends after the trigger check "so a closing
-tag at the start of a line does not get an `<l-n>` tag placed right before
-it" (spec.md:153). The Testing section's example of this is
-`<textarea>a\n</textarea> b`, where `<l-n>2</l-n>` must appear after
-`</textarea>` (spec.md:341–342). However, `<textarea` at the start of a line
-begins a CommonMark HTML block of type 1 (§4.6, condition 1), and type 1
-blocks can also interrupt a paragraph. The whole input becomes one
-`HtmlBlock`, so it is opaque, and ` b` is raw HTML that gets no tag at all.
-The required assertion fails for every correct implementation.
+~~### 4. `LineMap` is used in the signature but never defined (moderate)~~
 
-The same applies to `script`, `style`, and `pre`. `title`, `iframe`, and
-`noframes` begin type 6 blocks, which can also interrupt a paragraph. Only a
-target opened *in the middle of* a paragraph line exercises the
-closing-event rule.
+spec.md:90 adds `Option<&LineMap>`, but no section defines `LineMap`. The
+section on source line offsets (spec.md:198–254) describes three different
+things: a byte-offset-to-Markdown-line table built from "the exact input
+bytes", the identity-plus-one mapping for Markdown documents, and per-block
+segments for source files. The spec doesn't say:
 
-**Suggest:** Change the example to `x <textarea>a\n</textarea> b`. Its
-expected output contains `<l-n>1</l-n>x <textarea>a\n</textarea><l-n>2</l-n>
-b`. Add a sentence to "Raw-text suppression" saying that a target opened at
-the start of a line is normally an HTML block. For HTML blocks, suppression
-matters only when the block ends before its target closes, for example at a
-blank line (types 6–7) or at a container boundary.
+* whether `LineMap` holds the line-start offsets, or `markdown_to_html`
+  computes them from its `markdown` argument. If the caller computes them, it
+  must use exactly the string that is passed.
+* what the Markdown document caller (`processing.rs:1024`) passes when
+  `is_toc` is false. It has no segments, so it needs an identity variant or
+  segments built specially.
+* who builds the segments. The natural place is the fold at
+  `processing.rs:1072–1076`, which is where spec.md:245 says to record them.
 
-~~### 5. `markdown_to_html`'s new inputs aren't specified (moderate)~~
+**Suggest:** Define the type, for example
+`enum LineMap { Document, Segments(Vec<(usize, Vec<usize>)>) }`, with the
+line-start table computed inside `markdown_to_html`. State what each caller
+passes.
 
-`markdown_to_html` currently takes only `markdown: &str` (`processing.rs:1446`)
-and has two callers: the Markdown document path (`processing.rs:1024`) and
-the source-file path (`processing.rs:1079`). After this change it needs three
-new inputs, and the section names none of them:
+~~### 5. What `None` turns off isn't stated (nit)~~
 
-* the line map, which is the identity-plus-one function for Markdown
-  documents but a list of per-block segments for source files
-  (spec.md:194–243);
-* a way to turn tags off when `is_toc` is true (spec.md:35–37, 181–182). The
-  parameter is still the unused `_is_toc` (`processing.rs:972`);
-* the file path, which the hand-written-tag warning requires (spec.md:83).
+According to spec.md:91, `None` means "emit no tags". That leaves two
+questions open. Does the hand-written-tag escape (spec.md:80–86), which runs
+"before tag injection", still run? And what source line does its required
+warning report when there's no map? If the escape is skipped, a hand-written
+`<l-n>` in the sidebar TOC is hidden by `l-n { display: none; }`. If it runs,
+TOC output and the output of every test that passes `None` change. Say which
+one applies. If the escape runs, also say that the warning leaves out the
+line.
 
-Existing tests call `markdown_to_html(markdown)` directly
-(`processing/tests.rs:1709, 1798, 1820, 1845, 1874`), so the signature
-affects every one of them.
+~~### 6. `--!>` closes a comment in html5ever but not in the scanner (nit)~~
 
-**Suggest:** Give the signature, for example
-`markdown_to_html(markdown: &str, line_map: Option<&LineMap>, file_path: &Path)`
-where `None` means "emit no tags" (the TOC case and tests that don't care).
-Add the `is_toc` wiring to checklist item 2.
-
-~~### 6. Smaller wording gaps (nit)~~
-
-* **HtmlBlock opacity is redundant.** The table gives the reason "Contains
-  only non-trigger `Html` events" (spec.md:148). If so, depth never matters
-  inside it. Either say the entry is defensive, or drop it.
-* **Untagged lines** (spec.md:170–174) leaves out continuation lines of a
-  multi-line link destination or title (`[a](url\n"t")`) and lines inside a
-  raw-text suppression region.
-* **Sidebar TOC** is stated three times: in the introduction (spec.md:35),
-  under Other constructs (spec.md:181), and in the Tag format section. Keep
-  only the one in the introduction.
-* **Formatting.** spec.md:151, 153–157, and 159 run past 80 columns, against
-  `AGENTS.md`. Five blank lines (spec.md:160–164) separate "Raw-text
-  suppression" from "Other constructs".
+The HTML tokenizer also ends a comment at `--!>`. The scanner looks only for
+`-->` (spec.md:169), so `<!-- a --!>` in an HTML block leaves the scanner
+suppressed until the next `-->` or the next reset. The result is only missing
+tags. Either add `--!>` to the closer, or list it with the accepted false
+positives.
 
 What's sound
 ------------
 
-* The trigger list is complete for pulldown-cmark 0.13 with `Options::all()`
-  minus smart punctuation. It covers every inline leaf event and every inline
-  container tag, including `Superscript`/`Subscript` and the wikilinks that
-  `Options::all()` turns on, which arrive as `Tag::Link`.
-* Excluding `SoftBreak`, `HardBreak`, and `End` is right. Their ranges start
-  on the previous line or repeat the `Start` range. Keeping break whitespace
-  outside the tag is what makes the round trip byte-identical.
-* No trigger can land on a doc block separator line. Every separator line is
-  an `Html` event inside an `HtmlBlock`, and the separator's leading blank
-  line ends any paragraph, list, or block quote that is still open. So
-  `DOC_BLOCK_SEPARATOR_REMOVE_FENCE`'s exact-string replacement and
-  `DOC_BLOCK_SEPARATOR_BROKEN_FENCE`'s `.*?` never meet an injected tag.
-* `MetadataBlock` must be opaque. pulldown-cmark's HTML writer suppresses
-  `Text` inside it but still writes `InlineHtml`, so an injected tag would
-  otherwise appear in the output.
-* Raw-text suppression only reads `Html`/`InlineHtml`, which is correct.
-  pulldown-cmark escapes `>` in `Text`, `Code`, and attributes, so generated
-  HTML can never contain a closing sequence that the scanner misses.
-* The Example output is what minify-html produces from pulldown-cmark's
-  output: it leaves out the optional `</p>` before `<ul>`, and the soft break
-  collapses to the space before `<l-n>4</l-n>`.
+* The tag format matches `render_fragment_content`'s 1-based numbering
+  (`processing.rs:2179–2185`). Strict monotonicity holds for the whole
+  `markdown_to_html` call: events arrive in source order, and the
+  content-line maps are strictly increasing within and across blocks.
+* The lookup rule is consistent with the placement rules. Every untagged line
+  (fences, HTML blocks, suppressed text, continuation lines) resolves to the
+  nearest earlier tag in its container, or to no position.
+* Raw-text suppression doesn't need an opaque-depth reset. A doc block's
+  unterminated fence ends at the separator's backtick or tilde fence, and an
+  `Image` can't cross a blank line.
+* The separator has no raw-text opener and no `<!--`, so scanning it can't
+  turn suppression on.
+* The trigger list and the opaque set match pulldown-cmark 0.13.6's writer:
+  * `raw_text` (`html.rs:479`) pulls the alt-text events through the adapter,
+    so depth counting sees them.
+  * `in_non_writing_block` suppresses `Text` but not `InlineHtml`, which is
+    why `MetadataBlock` must be opaque.
+* The Example output matches existing minified output. For example,
+  `translation.rs:1966` shows `<li><input checked type=checkbox>Task list`,
+  with no space after the checkbox.

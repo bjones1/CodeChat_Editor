@@ -78,19 +78,17 @@ In `markdown_to_html` output:
   class="cc-line-number">` (used for gathered fragment gutters). The Client must
   never call `customElements.define` on it.
 * <strong>Hand-written tags:</strong> `l-n` is reserved. Before tag
-  injection, scan `Html` and `InlineHtml` events for `(?i)<(/?l-n(?=[\s/>]))`,
-  escape each match to `&lt;$1`, and log via `log::warn!` (with file path and
-  source line). Escaping keeps text visible despite `l-n { display: none; }`,
-  prevents unclosed tags from swallowing later blocks, and preserves the text
-  on save. (False positives in comments, attributes, and raw-text elements are
-  accepted.)
+  injection (even when the line map is `None`, such as in the sidebar TOC), scan
+  `Html` and `InlineHtml` events for `(?i-u)<(/?l-n)([\t\n\x0C\r />])`, escape
+  each match to `&lt;$1$2`, and log via `log::warn!` with the file path and
+  source line (omitting the line when the line map is `None`). Escaping keeps
+  text visible despite `l-n { display: none; }`, prevents unclosed tags from
+  swallowing later blocks, and preserves the text on save. (False positives in
+  comments, attributes, and raw-text elements are accepted.)
 
 <h2 id="cc-gpOIpo2gjZ">Placement</h2>
 
-Update `markdown_to_html` to accept the line map (`Option<&LineMap>`) and file
-path (`&Path`). When the map is `None` (such as when `is_toc` is `true`), emit
-no tags. Otherwise, parse with `into_offset_iter` and run a streaming adapter
-that injects `Event::InlineHtml("<l-n>N</l-n>")` before eligible events.
+Update `markdown_to_html` to accept `line_map: Option<&LineMap>` and `file_path: &Path`, where `LineMap` is either `Document` (maps Markdown line `m` to `m + 1`) or `Segments(Vec<(usize, Vec<usize>)>)` (built during `source_to_codechat_for_web`'s fold). Pass `None` when `is_toc` is `true` to emit no tags.
 
 ### Trigger rules
 
@@ -161,21 +159,22 @@ Scan incoming `Html` and `InlineHtml` events before injecting `<l-n>` tags
 event, applying state changes *after* the event's trigger check so a closing tag
 at the start of a line does not receive an inner `<l-n>` tag:
 
-* **Unsuppressed:** Find the earliest opener matching
-  `(?i)<(script|style|textarea|title|xmp|iframe|noembed|noframes|noscript|plaintext|template|select)(?=[\s/>])`
+* **Unsuppressed:** Scan for the earliest opener matching
+  `(?i-u)<(script|style|textarea|title|xmp|iframe|noembed|noframes|noscript|plaintext|template|select)[\t\n\x0C\r />]`
   or `<!--`.
-* **Suppressed:** Ignore new openers and scan only for the active target's
-  closer: `(?i)</name(?=[\s/>])` for elements (`plaintext` never closes), or
-  `-->` searched from the first byte of `<!--` (so empty comments `<!-->` and
-  `<!--->` close immediately). Continue scanning the remainder of the event
-  after any closer.
+  * In `InlineHtml` events, only match at **byte offset 0** (ignores tags inside attribute values).
+  * In `Html` events, search the entire event.
+  * Record the opener's source line upon matching.
+* **Suppressed:** Ignore new openers and scan the entire event for the active closer:
+  `(?i-u)</name[\t\n\x0C\r />]` (`plaintext` never closes), or `-->` / `--!>`
+  starting from the first byte of `<!--` (allowing `<!-->` and `<!--->` to close
+  immediately). Resume normal scanning after any closer.
 
-Reset suppression at every doc-block separator and at the end of the input. If
-suppression is still active at a reset, log a warning via `log::warn!` with the
-file path and line number. (Real unclosed elements cannot cross a separator
-without `parse_doc_block` rejecting the translation, and comments are closed by
-the separator itself, so resetting prevents false positives—like `<select>`
-inside an attribute value—from dropping tags in later blocks.)
+Reset suppression at the end of input and when the first event at or after the
+next segment's `start_md_line` arrives (after scanning the preceding separator's
+closing `Html` events). If suppression is still active at a reset, log a warning
+via `log::warn!` with the file path and recorded opener line. *(Prevents unclosed
+tags or attribute false positives from leaking across doc-block boundaries).*
 
 **Other constructs:**
 * **Tables:** No special handling needed. Each row's tag lands in its first
@@ -306,7 +305,7 @@ Hydration invariants:
 
 ### Dehydration
 * **Removal:** A separate pre-pass deletes every `l-n` element and its content—matching on local name across all depths and namespaces (including foreign `<svg>`/`<math>` contexts and `template_contents`). Both callers of `dehydrating_walk_node` (the Markdown document path in `codechat_for_web_to_source` and `doc_block_html_to_markdown`) and the test helper `dehydrate_html` run it first. It must be a separate pass because `dehydrating_walk_node` doesn't descend into the nodes it replaces (Mermaid/GraphViz, math, `<pre>` with `<br>`), and a stray tag would block those replacements, which require a single text child or only text and `<br>` children.
-* **Fidelity:** After removing a tag, the pre-pass merges the text nodes on either side of it, so `htmd` sees the same DOM tree as for HTML without tags. Because break whitespace stays outside tags, the resulting Markdown is byte-identical. Pasted <l-n> DOM elements are stripped on save, while hand-written <l-n> tags in Markdown were escaped during translation and are preserved.
+* **Fidelity:** After removing a tag, the pre-pass merges the text nodes on either side of it, so `htmd` sees the same DOM tree as for HTML without tags. Because break whitespace stays outside tags, the resulting Markdown is byte-identical. Pasted `<l-n>` DOM elements are stripped on save, while hand-written `<l-n>` tags in Markdown were escaped during translation and are preserved.
 * **Cursor marker:** `html_to_dom` injects `UNICODE_CURSOR_MARKER` before the pre-pass, so Client and Server node indices match. The marker rarely lands in an `l-n` (for example, through `html_to_dom`'s fallback to the last child, or a restored selection). When the pre-pass removes an `l-n` containing the marker in any descendant text, it leaves a text node containing only the marker in its place, which is then merged with adjacent text like any other. If the DOM path ends on an `l-n` element rather than a text node, `html_to_dom` inserts no marker, as it does today for any non-text node.
 
 <h2 id="cc-qSbTxGyL2n">Re-translation &amp; diffs</h2>
