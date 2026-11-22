@@ -1,210 +1,229 @@
-Review of "Tag format & lookup" (spec.md, lines 39–75)
-=====================================================
+Review of "Placement" (spec.md, lines 88–183)
+=============================================
 
 Scope
 -----
 
-This review covers only the `<h2 id="cc-T4yjQxfetF">Tag format &amp;
-lookup</h2>` section (spec.md:39–75). Other sections were read only for
-context, or are cited where they conflict with this one. Claims about existing
-code were checked against the `line-number-support-2` branch:
-`server/src/processing.rs` (`markdown_to_html`, `parse_doc_block`,
-`doc_blocks_to_dom`, `hoist_fragment_content`, `render_fragment_content`),
-`server/src/translation.rs`, `server/src/processing/cache.rs`, and
-`client/src/tinymce-config.mts`. Nothing was built or run.
+This review covers only the `<h2 id="cc-gpOIpo2gjZ">Placement</h2>` section
+(spec.md:88–183), including its subsections "Trigger rules", "Example", and
+"Exceptions". Other sections were read only for context, or are cited where
+they conflict with this one. Claims about existing code were checked against
+the `line-number-support-2` branch: `server/src/processing.rs`
+(`markdown_to_html`, `source_to_codechat_for_web`, the
+`DOC_BLOCK_SEPARATOR_*` constants, `doc_blocks_to_dom`, `parse_doc_block`,
+`html_to_dom`) and `client/src/CodeMirror-integration.mts`. CommonMark
+behavior was checked against the 0.31.2 spec that `processing.rs` cites.
+Nothing was built or run.
 
 Summary
 -------
 
-Since round 1, the section has gained a per-container lookup rule, a
-Client-resilience bullet, and a hand-written-tag policy. The syntax rules are
-still solid. The new material has four real problems:
+All seven round 2 findings are fixed. The trigger rules, the opaque-depth
+counter, and the check-then-toggle order for raw-text suppression are sound.
+This round found four real problems:
 
-* An unclosed hand-written `<l-n>` hides the rest of its container and then
-  deletes it on save. A closed one is hidden too, so "renders normally" is
-  wrong.
-* The lookup rule says "the last tag", but the next bullet says Client
-  consumers can't assume ordering. In the Client, "last" has no defined
-  meaning.
-* The per-container lookup doesn't say how a consumer picks the container.
-  Applied as written, every earlier doc block resolves a line that belongs to
-  a later block.
-* The "Semantics" bullet is false for the mid-line tags that the round 2
-  Placement fix introduced.
+* Placement makes `<l-n>` the first child of nearly every block, and the
+  Client's existing caret code walks `firstChild` down to the first text
+  node. Entering a doc block from above puts the caret inside the hidden tag,
+  so typed text is invisible and deleted on save.
+* Raw-text suppression is never reset. One false-positive opener (an
+  attribute value, or markup inside a comment) silently drops every later tag
+  in the document, or in every later doc block of a source file. The
+  parenthesis that is meant to rule this out is inaccurate.
+* The scanner's matching rules are undefined. A naive scan gets the empty
+  comments `<!-->` and `<!--->` wrong, and those trigger the drop above.
+* The section's key example of a closing tag at the start of a line,
+  `<textarea>a\n</textarea> b`, is a CommonMark HTML block, so it never goes
+  through the rule it is meant to test.
 
-The remaining findings are about how warnings are reported and detected, a
-broken cross-reference, and wording.
+The remaining findings are about the `markdown_to_html` signature and wording.
 
 Findings
 --------
 
-~~### 1. Hand-written `<l-n>`: hidden content and data loss (important)~~
+~~### 1. Every block's first text node is now hidden, and the Client puts the caret there (important)~~
 
-spec.md:72–75 says a hand-written `l-n` start tag "renders normally, and is
-stripped (along with its content) during dehydration on the next save".
+The trigger rules put the tag *inside* `<p>`, `<h1>`, `<li>`, `<td>`, and so
+on, before the first inline content (spec.md:108–113). Doc block HTML
+therefore almost always starts `<p><l-n>N</l-n>…`.
 
-~~* **It doesn't render.** The Client stylesheet rule `l-n { display: none; }` (Sanitization table, spec.md:258) applies to every `l-n`. A hand-written `<l-n>important</l-n>` disappears from the Client view. Then the next save deletes it from the file. The user gets a warning about text they can't see.~~
-~~* **An unclosed tag hides everything after it.** `l-n` is an unknown element to html5ever. A later `<p>` start tag closes an open `p` but not an open  `l-n`. Given `Intro <l-n> oops` followed by more paragraphs, every later  paragraph (and every generated tag in them) nests inside the hand-written  element. `parse_doc_block` accepts this: the sentinel ends up inside the  open element, so `contains_sentinel` is true and the HTML is reparsed  without error (`processing.rs:1625–1640`). The rest of the doc block or  document is invisible in the Client, and dehydration deletes all of it on  the next save.~~
-~~* **It breaks this section's own guarantees.** The bullets at spec.md:41–57 apply to "`markdown_to_html` output". A hand-written `<l-n>999</l-n>` (or `<l-n class=x>`, or `<l-n>abc</l-n>`) appears in that output and violates Format and Monotonicity.~~
+`CodeMirror-integration.mts:1238–1270` handles the caret moving into a doc
+block from the line above. It descends `contents.firstChild` until it reaches
+a text node, then calls `range.setStart(edgeNode, 0)`. With tags present, that
+text node is the digits inside `<l-n>`. The comment there explains that
+TinyMCE keeps this selection after it initializes. So the user's first
+keystrokes go into the `l-n` element: they are hidden by
+`l-n { display: none; }`, and the dehydration pre-pass deletes them along
+with the tag on the next save. The Sanitization table says the CSS rule
+"block[s] caret entry" (spec.md:269). That holds for caret movement by the
+browser, but not for a range set by script.
 
-**Suggest:** Don't let hand-written tags reach the DOM. The adapter already
-scans every `Html` and `InlineHtml` event for them, so it can escape the
-`<l-n` (emit `&lt;l-n`) or drop the tag in the same pass. The user then sees
-the literal text, nothing is hidden, and a save writes it back unchanged.
-Keep the warning. If the current policy stays, at least (a) make an unclosed
-hand-written `l-n` a translation error, as `parse_doc_block` already does for
-other text-hiding constructs, (b) replace "renders normally" with "is hidden
-in the Client and deleted with its content on the next save", and (c) limit
-the Format and Monotonicity bullets to *generated* tags.
+The end-of-block branch (`lastChild`) is safe, because a tag is never the last
+child of its line. Any other Client code that picks "the first text node" has
+the same problem.
 
-~~### 2. "Last tag" is undefined once ordering isn't guaranteed (important)~~
+**Suggest:** Add a rule to the spec, and an entry to the implementation
+checklist: Client code that chooses a caret position must skip `l-n`
+subtrees. In the code above, that means a walk that ignores `l-n` elements
+when it looks for the first text node. Extend the Client test (spec.md:393)
+so that it enters a tagged doc block from above, types a character, and
+checks that the character is visible and survives a save.
 
-The lookup rule (spec.md:58–61) resolves line `N` to "the last tag whose value
-is $\le N$". That relies on the Monotonicity bullet: in Server output, the
-last such tag in document order is also the one with the largest value. The
-next bullet (spec.md:62–66) says Client consumers "must not assume ordering or
-uniqueness". The scroll-sync consumer (spec.md:299) runs in the Client, so the
-only consumer that uses the lookup rule is the one for which the rule's
-premise doesn't hold. For example, take the tags `2, 9, 5` after a paste, with
-`N = 6`. "Last in document order with value $\le 6$" gives `5`. "Largest value
-$\le 6$" also gives `5`. With `N = 9`, the first reading gives `5` and the
-second gives `9`. A duplicate `5, 5` leaves it unclear which element to scroll to.
+~~### 2. Suppression is never reset, so a false positive silently drops all later tags (important)~~
 
-**Suggest:** Define the lookup on values, not positions: "the valid tag with
-the greatest value $\le N$; if several share that value, the first in document
-order". State that in Server output this is the same as the last such tag.
+The scanner looks at raw `Html`/`InlineHtml` text. Suppression ends only when
+"a later `Html` or `InlineHtml` event contains its closing sequence"
+(spec.md:153). Nothing ends it at a doc block separator or at the end of the
+input. These cases open suppression and never close it:
 
-~~### 3. The lookup doesn't say how to pick the container (important)~~
+* **Attribute values.** `<a title="<select> menu">x</a>` is valid inline
+  HTML. html5ever sees an `a` element, but the scanner sees `<select>`.
+* **Markup inside comments.** `<!-- TODO: add <template> -->`. Whether the
+  scanner ignores openers while a comment is open is unspecified (finding 3).
+* **Empty comments.** See finding 3.
 
-"Within a single container (Markdown body or one doc block), line `N` resolves
-to the last tag whose value is $\le N$" (spec.md:58–61). In a source file,
-tag values are global source lines (spec.md:214), so every doc block before
-line `N` has a tag $\le N$. A consumer that searches block 0 for a line in
-block 3, or for a line in a code block, gets a match. Only a consumer that
-already knows which container holds `N` gets the right answer. The parenthesis
-"CodeMirror locates code block lines" hints at this, but doesn't say how.
+The doc block separator happens to contain
+`</pre></script></style></textarea>-->` (`processing.rs:300`). So false
+positives for `script`, `style`, `textarea`, and comments end at the next
+doc block. False positives for `title`, `xmp`, `iframe`, `noembed`,
+`noframes`, `noscript`, `plaintext`, `template`, and `select` never end. They
+remove every tag from the rest of the Markdown document, or from every later
+doc block in a source file. Nothing warns, and scroll sync and cache line
+facts are lost without any visible error.
 
-**Suggest:** Make the first step explicit: "First find the block containing
-`N` from the block line ranges ($1 + \sum_{j<i} h_j$ up to
-$\sum_{j \le i} h_j$, see <xref ref="cc-dl60mkSR4A"></xref>, or the doc block
-positions in CodeMirror). Apply the tag lookup only if that block is a doc
-block, and only to that block's tags." For a Markdown document, the body is
-the only container.
+The parenthesis at spec.md:159 is meant to rule this out. It says that
+"Unclosed elements at a doc-block or document boundary cause
+`parse_doc_block` to reject the translation". That is true only for elements
+that are actually open in html5ever's DOM (raw-text elements, `select`, and
+`template` all lose the sentinel, so `parse_doc_block` rejects them). It says
+nothing about the scanner's false positives. It is also wrong for comments:
+`parse_doc_block` accepts a sentinel found inside a comment
+(`processing.rs:1635–1637`). Comments are safe only because the separator's
+`-->` ends suppression in the Markdown event stream before
+`DOC_BLOCK_SEPARATOR_REMOVE_FENCE` deletes that `-->` from the HTML.
 
-~~### 4. "Semantics" is false for mid-line tags (moderate)~~
+**Suggest:** Reset suppression at every doc block separator. This is safe
+because, as shown above, a real open target cannot cross a separator without
+`parse_doc_block` rejecting the translation. Log a `log::warn!` (with file
+path and line) whenever suppression is still active at a separator or at the
+end of the input, so that a dropped tail is at least visible. Rewrite the
+parenthesis to say why the reset is safe, and mention the comment case.
+Optionally, have the scanner skip quoted attribute values, which removes the
+most common false positive.
 
-Round 2 (Placement finding 2) kept tags in the middle of a line after a
-multi-line inline event, and the Omitted-tags parenthesis (spec.md:53–55)
-describes them. The Semantics bullet wasn't updated:
+~~### 3. The scanner's matching rules aren't defined (moderate)~~
 
-* "Marks where line `N`'s inline content starts" (spec.md:48). For
-  `` `a\nb` c ``, the output is `<l-n>1</l-n><code>a b</code><l-n>2</l-n> c`.
-  Line 2's content starts at `b`, inside the code span, not at tag 2.
-* "Content between two tags belongs to the first tag's line or a subsequent
-  untagged line" (spec.md:48–49). The `b` lies between tags 1 and 2 and comes
-  from line 2. Line 2 is neither the first tag's line nor untagged.
+spec.md:153–157 name the targets but not the matching rules. Implementations
+will differ on:
 
-**Suggest:** "Marks the first trigger which starts on line `N`. Content
-between two tags belongs to the first tag's line, to a later untagged line,
-or (for the continuation of a multi-line inline event) to the second tag's
-line." A tag for line `N` then gives a position *on* line `N`, not its start,
-which is all scroll sync needs.
+* **Empty comments.** CommonMark 0.31.2 (§6.6) accepts `<!-->` and `<!--->`
+  as complete inline HTML comments, and html5ever also closes them right
+  away. A scanner that searches for `-->` *after* the `<!--` opener misses
+  both closers, because they overlap the opener. Suppression then starts and
+  never ends (finding 2).
+* **Several transitions in one event.** An `Html` line such as
+  `</textarea><!-- x` closes one target and opens another. "Contains its
+  closing sequence" doesn't say whether the scan continues past the closer.
+* **Openers while suppressed.** Inside a comment or `<textarea>`, a
+  `<script>` has no effect in html5ever. The spec doesn't say whether the
+  scanner ignores it or treats it as a nested opener.
+* **Tag-name boundaries.** html5ever ends a raw-text element at `</name`
+  followed by whitespace, `/`, or `>`, case-insensitively. So
+  `</TEXTAREA >` and `</textarea\n>` close it. An opener must not match
+  `<selection>` or `<titlebar>`. The hand-written-tag rule already gives a
+  regex for this (spec.md:81); this rule has none.
 
-~~### 5. The warning has no channel and no detection rule (moderate)~~
+**Suggest:** Define the scanner as a two-state machine that runs repeatedly
+over each event. When not suppressed, find the earliest opener matching
+`(?i)<(script|style|…|select)(?=[\s/>])` or `<!--`. When suppressed, look
+*only* for that target's closer: `(?i)</name(?=[\s/>])` for elements, or
+`-->` searched from the first byte of `<!--` (so that `<!-->` and `<!--->`
+count as closed). After a closer, continue scanning the rest of the event.
+Add `<!-->`, `<!--->`, and `</textarea><!--` to the Exceptions tests.
 
-spec.md:72–75 requires "a non-blocking warning". It doesn't say where the
-warning goes. `markdown_to_html` returns a bare `String`
-(`processing.rs:1446`), `source_to_codechat_for_web` returns
-`Result<CodeChatForWeb, SourceToCodeChatForWebError>` with no warning field,
-and the only existing mechanism is `log::warn!`. A log line is easy to
-implement but the user never sees it, which matters because their text is
-deleted on save (finding 1). Implementers will choose differently, and the
-required test ("produces a warning", spec.md:358) can't be written until the
-channel is known.
+~~### 4. The section's own example of a closing tag at the start of a line isn't inline HTML (moderate)~~
 
-"Any `l-n` start tag ... in an incoming `InlineHtml` or `Html` event" also
-needs a matching rule. An `Html` event is raw text, not tokens. A substring
-search for `<l-n` also fires on `<!-- <l-n> -->`, on
-`<span title="<l-n>">`, and on `<l-n>` inside a `<script>` or `<textarea>`.
-html5ever parses none of these as an element, so dehydration does *not* strip
-them, which contradicts "is stripped ... on the next save".
+Raw-text suppression starts and ends after the trigger check "so a closing
+tag at the start of a line does not get an `<l-n>` tag placed right before
+it" (spec.md:153). The Testing section's example of this is
+`<textarea>a\n</textarea> b`, where `<l-n>2</l-n>` must appear after
+`</textarea>` (spec.md:341–342). However, `<textarea` at the start of a line
+begins a CommonMark HTML block of type 1 (§4.6, condition 1), and type 1
+blocks can also interrupt a paragraph. The whole input becomes one
+`HtmlBlock`, so it is opaque, and ` b` is raw HTML that gets no tag at all.
+The required assertion fails for every correct implementation.
 
-**Suggest:** Name the channel (for example, `log::warn!` with the file path
-and source line, plus whatever user-facing route the project prefers). Define
-the match, for example the regex `(?i)<l-n[\s/>]`. Say that false positives
-inside comments, attribute values, and raw-text elements are accepted, and
-that only an actual `l-n` element is stripped on save.
+The same applies to `script`, `style`, and `pre`. `title`, `iframe`, and
+`noframes` begin type 6 blocks, which can also interrupt a paragraph. Only a
+target opened *in the middle of* a paragraph line exercises the
+closing-event rule.
 
-~~### 6. Broken cross-reference `cc-qSbTxGyL2n` (minor)~~
+**Suggest:** Change the example to `x <textarea>a\n</textarea> b`. Its
+expected output contains `<l-n>1</l-n>x <textarea>a\n</textarea><l-n>2</l-n>
+b`. Add a sentence to "Raw-text suppression" saying that a target opened at
+the start of a line is normally an HTML block. For HTML blocks, suppression
+matters only when the block ends before its target closes, for example at a
+blank line (types 6–7) or at a container boundary.
 
-spec.md:63 cites stale edits via `<xref ref="cc-qSbTxGyL2n"></xref>`. No
-element in the project has that id. `## Re-translation & diffs`
-(spec.md:283) has no id. Hydration will render an error in place of the link.
+~~### 5. `markdown_to_html`'s new inputs aren't specified (moderate)~~
 
-**Suggest:** Give that heading the id: `<h2 id="cc-qSbTxGyL2n">Re-translation
-&amp; diffs</h2>`. This matches the other `<h2 id=...>` headings in the spec.
+`markdown_to_html` currently takes only `markdown: &str` (`processing.rs:1446`)
+and has two callers: the Markdown document path (`processing.rs:1024`) and
+the source-file path (`processing.rs:1079`). After this change it needs three
+new inputs, and the section names none of them:
 
-~~### 7. Client-resilience bullet: wrong sources, undefined "invalid" (minor)~~
+* the line map, which is the identity-plus-one function for Markdown
+  documents but a list of per-block segments for source files
+  (spec.md:194–243);
+* a way to turn tags off when `is_toc` is true (spec.md:35–37, 181–182). The
+  parameter is still the unused `_is_toc` (`processing.rs:972`);
+* the file path, which the hand-written-tag warning requires (spec.md:83).
 
-spec.md:62–66 lists what can corrupt tags in the Client DOM. Two items don't
-belong in the list:
+Existing tests call `markdown_to_html(markdown)` directly
+(`processing/tests.rs:1709, 1798, 1820, 1845, 1874`), so the signature
+affects every one of them.
 
-* **Cursor markers** are inserted on the Server, during save
-  (`translation.rs:1465–1482`, then `html_to_dom`). They never appear in the
-  Client DOM. `client/src` doesn't reference `UNICODE_CURSOR_MARKER`. They
-  matter for dehydration, which spec.md:281 already covers.
-* **`<xref>` hydration** runs on the Server and only *removes* tags
-  (spec.md:262), and stored xref text is cleaned by `CLEAN_LINK_CONTENT_HTML`.
-  It can leave lines without a tag, but it can't duplicate or reorder tags.
+**Suggest:** Give the signature, for example
+`markdown_to_html(markdown: &str, line_map: Option<&LineMap>, file_path: &Path)`
+where `None` means "emit no tags" (the TOC case and tests that don't care).
+Add the `is_toc` wiring to checklist item 2.
 
-"Must ignore invalid `N` values" also needs a definition, since every consumer
-has to apply the same one.
+~~### 6. Smaller wording gaps (nit)~~
 
-**Suggest:** Remove the cursor marker from the list. Change the xref item to
-"can remove tags". Define validity: "a tag is valid if it has no element
-children and its `textContent` matches `^[1-9][0-9]*$`; consumers skip every
-other tag."
-
-~~### 8. Smaller wording gaps (nit)~~
-
-* **`N` ≥ 1.** "1-based ... no leading zeros" (spec.md:44–46) still allows
-  `0`, which has no leading zero. `cache.rs` uses `0` for an unknown line
-  (`cache.rs:2011, 2029`; spec.md:27). Say "`N` ≥ 1" so that a tag can't be
-  confused with "unknown".
-* **Omitted tags** (spec.md:51–53) lists "opaque content", which means
-  opaque depth. It doesn't list lines inside a raw-text suppression region,
-  which also get no tag. Add "or content inside a raw-text suppression
-  region".
-* **Line length.** spec.md:74–75 run past 80 columns, against the wrapping
-  rule in `AGENTS.md`.
+* **HtmlBlock opacity is redundant.** The table gives the reason "Contains
+  only non-trigger `Html` events" (spec.md:148). If so, depth never matters
+  inside it. Either say the entry is defensive, or drop it.
+* **Untagged lines** (spec.md:170–174) leaves out continuation lines of a
+  multi-line link destination or title (`[a](url\n"t")`) and lines inside a
+  raw-text suppression region.
+* **Sidebar TOC** is stated three times: in the introduction (spec.md:35),
+  under Other constructs (spec.md:181), and in the Tag format section. Keep
+  only the one in the introduction.
+* **Formatting.** spec.md:151, 153–157, and 159 run past 80 columns, against
+  `AGENTS.md`. Five blank lines (spec.md:160–164) separate "Raw-text
+  suppression" from "Other constructs".
 
 What's sound
 ------------
 
-* The Format rule is clear and testable. It matches `render_fragment_content`,
-  which counts from 1 and sums `code_doc_block_lines`
-  (`processing.rs:2152–2241`).
-* `l-n` is a valid custom element name: it starts with a lowercase ASCII
-  letter, contains a hyphen, and isn't one of the reserved names. So it can't
-  collide with a standard element. The ban on `customElements.define` (added
-  after round 1) closes the upgrade risk. No Client code defines `l-n`
-  (`tinymce-config.mts:153` registers only `graphviz-graph`, `wc-mermaid`,
-  `xref`, and `fragment`).
-* Strict monotonicity holds for generated tags in Server output, including
-  after hydration. Hydration only removes tags, and `hoist_fragment_content`
-  (`processing.rs:1811–1827`) moves a fragment's children to just after the
-  fragment without reordering them.
-* The new "leading content maps to no line" sentence and the "no position"
-  fallback in the lookup rule close round 1 findings 2 and 6 for Markdown
-  documents.
-* Checking hand-written tags "before tag injection" (spec.md:74) correctly
-  keeps generated tags from setting off the warning (round 2 Placement
-  finding 6).
-
-Out of scope, noted in passing
-------------------------------
-
-The introduction (spec.md:35–37) relies on `source_to_codechat_for_web`
-seeing `is_toc`. That parameter is currently `_is_toc` and unused
-(`processing.rs:972`), so the implementation checklist should include passing
-it to `markdown_to_html`.
+* The trigger list is complete for pulldown-cmark 0.13 with `Options::all()`
+  minus smart punctuation. It covers every inline leaf event and every inline
+  container tag, including `Superscript`/`Subscript` and the wikilinks that
+  `Options::all()` turns on, which arrive as `Tag::Link`.
+* Excluding `SoftBreak`, `HardBreak`, and `End` is right. Their ranges start
+  on the previous line or repeat the `Start` range. Keeping break whitespace
+  outside the tag is what makes the round trip byte-identical.
+* No trigger can land on a doc block separator line. Every separator line is
+  an `Html` event inside an `HtmlBlock`, and the separator's leading blank
+  line ends any paragraph, list, or block quote that is still open. So
+  `DOC_BLOCK_SEPARATOR_REMOVE_FENCE`'s exact-string replacement and
+  `DOC_BLOCK_SEPARATOR_BROKEN_FENCE`'s `.*?` never meet an injected tag.
+* `MetadataBlock` must be opaque. pulldown-cmark's HTML writer suppresses
+  `Text` inside it but still writes `InlineHtml`, so an injected tag would
+  otherwise appear in the output.
+* Raw-text suppression only reads `Html`/`InlineHtml`, which is correct.
+  pulldown-cmark escapes `>` in `Text`, `Code`, and attributes, so generated
+  HTML can never contain a closing sequence that the scanner misses.
+* The Example output is what minify-html produces from pulldown-cmark's
+  output: it leaves out the optional `</p>` before `<ul>`, and the soft break
+  collapses to the space before `<l-n>4</l-n>`.

@@ -87,9 +87,10 @@ In `markdown_to_html` output:
 
 <h2 id="cc-gpOIpo2gjZ">Placement</h2>
 
-`markdown_to_html` parses with `into_offset_iter` and runs a streaming adapter
-that injects `Event::InlineHtml("<l-n>N</l-n>")` before eligible events using a
-byte-offset-to-line map (<xref ref="cc-dl60mkSR4A"></xref>).
+Update `markdown_to_html` to accept the line map (`Option<&LineMap>`) and file
+path (`&Path`). When the map is `None` (such as when `is_toc` is `true`), emit
+no tags. Otherwise, parse with `into_offset_iter` and run a streaming adapter
+that injects `Event::InlineHtml("<l-n>N</l-n>")` before eligible events.
 
 ### Trigger rules
 
@@ -145,41 +146,51 @@ none inside); its matching `End` decrements it. No tags emit while depth $> 0$.
 | :--- | :--- |
 | `Tag::CodeBlock` | `Text` events ignore line boundaries; `hydrate_child` requires a single text node for Mermaid/GraphViz; syntax highlighters read `innerHTML`; `DOC_BLOCK_SEPARATOR_*` markers must match. |
 | `Tag::Image` | Inner events serialize into the `alt` attribute. |
-| `Tag::HtmlBlock` | Contains only non-trigger `Html` events (raw-text suppression handles any tags left open when the block ends). |
+| `Tag::HtmlBlock` | Defensive; contains only non-trigger `Html` events. |
 | `Tag::MetadataBlock` | Unrendered, though events still pass through the writer. |
 
-**Raw-text suppression:** CommonMark can end an `HtmlBlock` at a blank line or container boundary while a tag or comment is still open. Because `html5ever` parses the contents of the constructs below as literal text or separate fragments, dehydration cannot strip `<l-n>` tags inside them.
+**Raw-text suppression:** CommonMark can end an `HtmlBlock` at a blank line or
+container boundary while a tag or comment is still open. Because `html5ever`
+parses the contents below as literal text or separate fragments, dehydration
+cannot strip `<l-n>` tags inside them. Note that targets opened at the start of
+a line normally form an HTML block; suppression only matters if that block ends
+early or if the target opens mid-paragraph.
 
-Scan incoming `Html` and `InlineHtml` events before injecting `<l-n>` tags (this pass also checks for hand-written `l-n` tags so generated tags don't trigger warnings). If an event opens a target below without closing it, suppress `<l-n>` emission until a later `Html` or `InlineHtml` event contains its closing sequence (`-->` or an ASCII case-insensitive end tag). Suppression starts and ends *after* the opening or closing event's trigger check (so a closing tag at the start of a line does not get an `<l-n>` tag placed right before it, inside the raw-text element):
-* **Raw-text & foreign elements** (`script`, `style`, `textarea`, `title`, `xmp`, `iframe`, `noembed`, `noframes`, `noscript`, `plaintext`): Parsed as literal text (`plaintext` never closes).
-* **`template`:** Contents live in a `DocumentFragment` outside normal child traversal.
-* **`select`:** `html5ever` strips unknown start tags inside `<select>`, leaving the line-number digits behind.
-* **HTML comments (`<!--`):** Unclosed comments absorb subsequent `<l-n>` tags as comment text.
+Scan incoming `Html` and `InlineHtml` events before injecting `<l-n>` tags
+(after escaping hand-written `l-n` tags). Run a two-state scanner across each
+event, applying state changes *after* the event's trigger check so a closing tag
+at the start of a line does not receive an inner `<l-n>` tag:
 
-*(Unclosed elements at a doc-block or document boundary cause `parse_doc_block` to reject the translation, so suppression only needs to handle elements closed later in the same container.)*
+* **Unsuppressed:** Find the earliest opener matching
+  `(?i)<(script|style|textarea|title|xmp|iframe|noembed|noframes|noscript|plaintext|template|select)(?=[\s/>])`
+  or `<!--`.
+* **Suppressed:** Ignore new openers and scan only for the active target's
+  closer: `(?i)</name(?=[\s/>])` for elements (`plaintext` never closes), or
+  `-->` searched from the first byte of `<!--` (so empty comments `<!-->` and
+  `<!--->` close immediately). Continue scanning the remainder of the event
+  after any closer.
 
-
-
-
+Reset suppression at every doc-block separator and at the end of the input. If
+suppression is still active at a reset, log a warning via `log::warn!` with the
+file path and line number. (Real unclosed elements cannot cross a separator
+without `parse_doc_block` rejecting the translation, and comments are closed by
+the separator itself, so resetting prevents false positives—like `<select>`
+inside an attribute value—from dropping tags in later blocks.)
 
 **Other constructs:**
 * **Tables:** No special handling needed. Each row's tag lands in its first
-  non-empty cell; empty rows and delimiter rows (`|---|`) get no tags. (Raw
-  inline HTML tables inside a paragraph may foster-parent a tag above the
-  table; dehydration still strips it.)
+  non-empty cell; empty rows and delimiter rows (`|---|`) get no tags.
 * **Untagged lines:** Blank lines, fences, code block lines, thematic breaks,
   setext underlines, link reference definitions, table delimiters, HTML/metadata
-  blocks, continuation lines of multi-line code spans, inline/display math,
-  inline HTML, or image alt text that contain no subsequent inline events, and
-  doc block separator lines.
+  blocks, continuation lines of multi-line code spans, math, link destinations
+  or titles, inline HTML, or image alt text with no subsequent inline events,
+  lines inside raw-text suppression, and doc block separator lines.
 * **`<xref>`:** Multi-line `<xref>` elements may receive an inner tag, which
   hydration removes (<xref ref="cc-e7tpKZV9sK"></xref>).
 * **Hand-written math and diagram HTML:** Tags emitted inside raw math spans,
   `<pre>`/`<code>`, `wc-mermaid`, or `graphviz-graph` are removed before
   hydration, with adjacent text nodes merged
   (<xref ref="cc-e7tpKZV9sK"></xref>).
-* **Sidebar TOC:** `source_to_codechat_for_web` omits tags when `is_toc` is
-  `true`, and includes them when opened as the current file (`is_toc` is `false`).
 
 
 <h2 id="cc-dl60mkSR4A">Source line offsets</h2>
@@ -268,6 +279,12 @@ HTML sanitizers must never unwrap `<l-n>` (Ammonia's default), which turns
 | TinyMCE (`client/src/tinymce-config.mts`) | Add `l-n` to `extended_valid_elements` and `~l-n` (inline) to `custom_elements` so TinyMCE doesn't unwrap it. |
 | Client CSS (`client/src/css/CodeChatEditor.css`) | Add unlayered `l-n { display: none; }` outside theme layers to hide digits and block caret entry. |
 
+* **Caret placement:** `l-n { display: none; }` blocks browser caret movement
+  into `<l-n>` tags, but script-driven selection (such as entering a doc block
+  from above in `client/src/CodeMirror-integration.mts`) must explicitly skip
+  `l-n` subtrees when walking for the first text node so typed text is neither
+  hidden nor deleted on save.
+
 Hydration invariants:
 
 * `hydrate_dom` strips `<l-n>` inside `<xref>` during `hoist_fragment_content`, before `hydrate_source_xref` captures `data-content` for dehydration (<xref ref="cc-HZyE2Bv-eI"></xref>).
@@ -336,10 +353,11 @@ Required cases:
 * <strong>Exceptions:</strong> fenced code closed with backticks or tildes,
   unterminated fences, indented code; Mermaid and GraphViz still hydrate; image
   alt text spanning lines; raw HTML blocks; front matter; each raw-text element,
-  `template`, `select`, and HTML comment opened by inline HTML or an HTML block
-  and closed across lines, blank lines, or container boundaries, including a
-  closing tag at the start of a line (such as `<textarea>a\n</textarea> b`, where
-  `<l-n>2</l-n>` must appear after `</textarea>`); multi-line `<xref>` whose
+  `template`, `select`,  and HTML comment opened by inline HTML or an HTML block
+  and closed across lines, blank lines, or container boundaries, including
+  `<!-->`, `<!--->`, `</textarea><!--`, and a closing tag at the start of a
+  line (such as `x <textarea>a\n</textarea> b`, where `<l-n>2</l-n>` must
+  appear after `</textarea>`); multi-line `<xref>` whose
   `data-content` holds no tag.
 * <strong>Lexer metadata:</strong> In both the regex and Pest lexer tests,
   assert source heights and content-line maps against original source spans,
@@ -391,9 +409,9 @@ Required cases:
   without tags, so check `contents`, not just the presence of an `Update`) and
   none for earlier ones.
 * <strong>Client:</strong> in `CodeChatEditor-test.mts`, load
-  `<p><l-n>3</l-n>a</p>` into TinyMCE, read it back in the Client's raw save
-  format, and check the tag is still a child of the `<p>` and that
-  `getComputedStyle` reports `display: none`.
+  `<p><l-n>3</l-n>a</p>` into TinyMCE, verify the tag stays inside `<p>` with `display: none`, enter the
+  tagged doc block from the line above, type a character, and confirm it is
+  visible and survives a save.
 
 Implementation checklist
 ------------------------
@@ -404,13 +422,14 @@ Implementation checklist
    merging adjacent comments. Initialize the reverse-translation map in
    `code_mirror_to_code_doc_blocks` to an empty vector.
 2. `server/src/processing.rs`: Implement the LF/CRLF/lone-CR byte-to-line map,
-   per-block source-line segments, `markdown_to_html` tag injection and
-   warnings, and Ammonia allowlists (`AMMONIA_OPTIONS`,
+   per-block source-line segments, `markdown_to_html` signature and tag
+   injection (passing `None` when `is_toc` is `true`), warnings, and Ammonia allowlists (`AMMONIA_OPTIONS`,
    `CLEAN_LINK_CONTENT_HTML`, `CLEAN_FRAGMENT_HTML`). Add tag removal and text
    merging inside math and diagram containers before hydration, `<xref>` tag
    stripping in `hydrate_dom`, the `<l-n>` removal pre-pass before
    `dehydrating_walk_node`, and `strip_line_number_tags`.
 3. `server/src/translation.rs`: Update `compare_html` to call `strip_line_number_tags`.
-4. `client/src/tinymce-config.mts` & `client/src/css/CodeChatEditor.css`:
- Configure TinyMCE custom elements and unlayered `display: none`.
+4. `client/src/tinymce-config.mts`, `client/src/css/CodeChatEditor.css`, &
+   `client/src/CodeMirror-integration.mts`: Configure TinyMCE custom elements,
+   add unlayered `display: none`, and skip `l-n` subtrees when placing the caret.
 5. Tests: Add coverage for the changes above (per <xref ref="cc-wPpJhnQKLq"></xref>).
