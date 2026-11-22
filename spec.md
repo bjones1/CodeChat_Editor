@@ -229,32 +229,41 @@ Hydration invariants:
 
 
 ### Dehydration
-* **Removal:** `dehydrating_walk_node` deletes every `l-n` element and its content—matching on local name across all depths and namespaces, including foreign `<svg>`/`<math>` contexts—alongside hydrated gather lists. This runs before TinyMCE `<br>`/`<p>` fix-ups and custom-element replacements, leaving the walk index unchanged.
-* **Fidelity:** Because break whitespace stays outside tags, `htmd` sees identical DOM trees with or without tags, producing byte-identical Markdown. Hand-written or pasted `<l-n>` tags are stripped on save.
-* **Cursor marker:** `html_to_dom` injects `UNICODE_CURSOR_MARKER` before dehydration so Client and Server node counts match. If the marker lands inside an `<l-n>` text node, replace the `<l-n>` element with a text node containing only the marker.
-* **`compare_html_walker`:** Does not strip tags (handled by `compare_html`).
+* **Removal:** A separate pre-pass deletes every `l-n` element and its content—matching on local name across all depths and namespaces (including foreign `<svg>`/`<math>` contexts and `template_contents`). Both callers of `dehydrating_walk_node` (the Markdown document path in `codechat_for_web_to_source` and `doc_block_html_to_markdown`) and the test helper `dehydrate_html` run it first. It must be a separate pass because `dehydrating_walk_node` doesn't descend into the nodes it replaces (Mermaid/GraphViz, math, `<pre>` with `<br>`), and a stray tag would block those replacements, which require a single text child or only text and `<br>` children.
+* **Fidelity:** After removing a tag, the pre-pass merges the text nodes on either side of it, so `htmd` sees the same DOM tree as for HTML without tags. Because break whitespace stays outside tags, the resulting Markdown is byte-identical. Hand-written or pasted `<l-n>` tags are stripped on save.
+* **Cursor marker:** `html_to_dom` injects `UNICODE_CURSOR_MARKER` before the pre-pass, so Client and Server node indices match. The marker rarely lands in an `l-n` (for example, through `html_to_dom`'s fallback to the last child, or a restored selection). When the pre-pass removes an `l-n` containing the marker in any descendant text, it leaves a text node containing only the marker in its place, which is then merged with adjacent text like any other. If the DOM path ends on an `l-n` element rather than a text node, `html_to_dom` inserts no marker, as it does today for any non-text node.
 
 ## Re-translation & diffs
 
 Line numbers shift when lines are added/removed above them or when save-time word wrapping reflows edits.
 
-* **Comparison (`compare_html`):** Strips `<l-n>[0-9]+</l-n>` from both minified inputs so stale line numbers alone don't trigger a re-translation. Tags update on the next IDE sync.
-  * *TODO:* If a future consumer needs exact line numbers immediately after an edit, trigger re-translation when only tags differ (throttled to autosave).
-* **Diff amplification:** Inserting a line renumbers all later tags, causing `diff_code_mirror_doc_blocks` to re-render every subsequent doc block.
-  * *TODO:* If benchmarking large files shows slowdowns, switch to block-relative line numbers plus a per-block start offset.
+* **Comparison (`compare_html`):** Strips tags from both minified inputs using `strip_line_number_tags`, a `pub(crate)` helper in `processing.rs` that removes `<l-n>[0-9]+</l-n>`, so stale line numbers alone don't trigger a re-translation. The strip runs before the `<br> ` and `<p><iframe ` normalizations. `compare_html_walker` doesn't strip tags.
+* **Staleness:** When only tags differ, no re-translation is sent, and the Server keeps the Client's HTML. Tags are corrected only when the Server next sends new HTML: after an IDE-originated edit, or a re-translation that differs for another reason (for example, a cache change). Until then, Client tags after an edited line (including lines shifted by word-wrap reflow) may be stale, and lines typed in the Client have no tag at all. Client consumers must tolerate both (see Consumers).
+  * *TODO:* If scroll sync proves inaccurate while editing in the Client, re-translate after a Client edit whenever the saved Markdown's line count changed.
+* **Diff amplification (source files only):** Inserting a line renumbers all later tags, so `diff_code_mirror_doc_blocks` emits a contents update for every later doc block. Without tags, only their positions change, and `DocBlockWidget.eq` (which ignores position) skips `updateDOM`. With tags, each later block resets its `innerHTML`, re-runs MathJax, re-creates Mermaid/GraphViz elements, and (if focused) calls TinyMCE `setContent`. Markdown documents are unaffected, since the Client already calls `setContent` on the whole document for every update.
+  * *TODO:* If a source file with 50 doc blocks containing math takes more than 100 ms from an IDE line insert to the Client update, switch to block-relative line numbers plus a per-block start offset.
 
 ### Consumers *(informative)*
 
+These are not part of this project's implementation; they motivate the tag
+format and define what Client consumers must tolerate.
+
 * **Cache line facts:** In `hydrating_walk_node`, track the last seen `<l-n>` tag. Set `TargetFact::line` and `FragmentFact::line` to the first descendant `<l-n>` tag, falling back to the last preceding tag (giving a lower bound for raw HTML blocks).
-* **Scroll sync:** Client uses `querySelectorAll("l-n")` per container to match IDE cursor positions, tolerating malformed or out-of-order tags.
+* **Scroll sync:** Client uses `querySelectorAll("l-n")` per container to match IDE cursor positions, tolerating malformed, out-of-order, stale, or missing tags.
 
 
 <h2 id="cc-wPpJhnQKLq">Testing</h2>
 
-Use unit tests in `server/src/processing/tests.rs` and
-`server/src/lexer/tests.rs`; don't add browser tests to `overall.rs` (they are
-slow). Tests not about line numbers should compare HTML after deleting tags with
-`compare_html`'s regex.
+Use unit tests in `server/src/processing/tests.rs`,
+`server/src/lexer/tests.rs`, and `translation.rs`'s `mod tests` (where the
+private `compare_html` is reachable); don't add browser tests to `overall.rs`
+(they are slow). The Client test below is the only exception: it runs in
+the browser harness, as `CodeChatEditor-test.mts` already does. Tests not about
+line numbers should compare HTML after deleting tags with
+`strip_line_number_tags`. Existing exact-HTML assertions outside these files
+(`server/tests/overall/overall_1.rs`, `overall_2.rs`, and
+`server/src/ide/vscode/tests.rs`), which can't reach a `pub(crate)` helper or
+compare whole messages, are updated to include the expected tags.
 
 Required cases:
 
@@ -272,24 +281,44 @@ Required cases:
 * <strong>Line offsets:</strong> Markdown document with CRLF endings; source
   file mixing inline and block comments, with `/*` on its own line, an
   unterminated fence in one doc block, an empty doc block, and a final doc block
-  without trailing newline. Numbers must match `render_fragment_content`'s.
+  without trailing newline. Each tag must equal $L$ from
+  <xref ref="cc-dl60mkSR4A"></xref>.
 * <strong>Sanitization and dehydration:</strong> `minify` keeps each tag and
   adjacent whitespace; stored target inner HTML and fragment content hold no
   tags; every existing round-trip test still reproduces its source; an `l-n`
   start tag in inline HTML or an HTML block produces a warning and still
   renders, but one in a code span doesn't warn; malformed or out-of-order Client
-  tags are removed; a cursor marker inside a tag survives.
+  tags are removed; a hand-written `<l-n>text</l-n>` is deleted with its
+  content; tags inside `<svg>` and `template_contents` are removed; for a
+  `dom_location` inside a tag, `doc_block_html_to_markdown`'s output holds the
+  marker immediately before the text that followed the tag (`<p>a
+  <l-n>2</l-n>b</p>` yields `a \u{E83B}b`); the pre-pass runs through both
+  `codechat_for_web_to_source` paths (Markdown document and source file); a stray tag inside `wc-mermaid`, a
+  `<pre>` with `<br>`, and math is removed and the replacement still happens;
+  text after a removed tag starting with `2) `, `#`, `+ `, `>`, or spaces
+  round-trips unchanged; Markdown from tagged HTML equals Markdown from the
+  same HTML with its tags deleted.
 * <strong>Comparison:</strong> `compare_html` reports equal for HTML differing
-  only in tag numbers, unequal otherwise.
+  only in tag numbers, and for a tag present on one side and missing on the
+  other (a line typed in the Client); unequal for a text change next to a tag
+  (`<l-n>2</l-n>b` vs `<l-n>3</l-n>c`) and for a tag removed with its line's
+  text; equal across the `<br> ` normalization next to a tag.
+* <strong>Diff amplification:</strong> translate a source file with doc blocks
+  before and after a code line, then the same file with one code line inserted
+  above that line. `diff_code_mirror_doc_blocks` on the two results emits a
+  non-empty `contents` diff for each later doc block (positions shift even
+  without tags, so check `contents`, not just the presence of an `Update`) and
+  none for earlier ones.
 * <strong>Client:</strong> in `CodeChatEditor-test.mts`, load
- `<p><l-n>3</l-n>a</p>` into TinyMCE, read it back in the Client's raw save
-  format, and check the tag is intact and hidden.
+  `<p><l-n>3</l-n>a</p>` into TinyMCE, read it back in the Client's raw save
+  format, and check the tag is still a child of the `<p>` and that
+  `getComputedStyle` reports `display: none`.
 
 Implementation checklist
 ------------------------
 
 1. `server/src/lexer.rs`: Compute `DocBlock::contents_line_offset`.
-2. `server/src/processing.rs`: Implement line map/segments, `markdown_to_html` tag injection + warnings, Ammonia allowlists (`AMMONIA_OPTIONS`, `CLEAN_LINK_CONTENT_HTML`, `CLEAN_FRAGMENT_HTML`), `<xref>` tag stripping in `hydrate_dom`, and `<l-n>` removal in `dehydrating_walk_node`.
-3. `server/src/translation.rs`: Update `compare_html` to strip `<l-n>[0-9]+</l-n>`.
+2. `server/src/processing.rs`: Implement line map/segments, `markdown_to_html` tag injection + warnings, Ammonia allowlists (`AMMONIA_OPTIONS`, `CLEAN_LINK_CONTENT_HTML`, `CLEAN_FRAGMENT_HTML`), `<xref>` tag stripping in `hydrate_dom`, the `<l-n>` removal pre-pass before `dehydrating_walk_node`, and `strip_line_number_tags`.
+3. `server/src/translation.rs`: Update `compare_html` to call `strip_line_number_tags`.
 4. `client/src/tinymce-config.mts` & `client/src/css/CodeChatEditor.css`: Configure TinyMCE custom elements and unlayered `display: none`.
 5. Tests: Add coverage for the changes above (per <xref ref="cc-wPpJhnQKLq"></xref>).
