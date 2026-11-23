@@ -494,70 +494,37 @@ GitHub userid: nurlybek-aimagambetov
 
 #### Contributions
 
-(Nurlybek's contributions)
+Replaced the single content-line offset with per-line source offsets that
+preserve gaps in merged comments; required both lexers to compute block heights
+from full normalized source spans; specified tag removal and text-node merging
+inside math and diagram containers before hydration; defined byte-offset
+mapping for LF, CRLF, and lone CR; expanded lexer, line-offset, and hydration
+test requirements.
 
 #### Specification review rounds
 
 | Round | Scope | Findings | Main changes made |
 | :--- | :--- | :--- | :--- |
-| 1 | Source line offsets, Sanitization & hydration | 4 (all P2) | Replaced the single content-line offset with per-line source offsets that preserve gaps in merged comments; required both lexers to compute block heights from full normalized source spans; specified tag removal and text-node merging inside math and diagram containers before hydration; defined byte-offset mapping for LF, CRLF, and lone CR; expanded lexer, line-offset, and hydration test requirements |
+| 1 | Source line offsets, Sanitization & hydration | 4 (all P2) | Corrected offsets, source heights, and newline handling; specified hydration cleanup and tests |
+| 2 | Source line offsets, Sanitization & hydration | 1 (P3) | No changes made |
 
 #### Last specification review
 
 **LLM used:** GPT-6 (Codex)  
 **Prompt used:** ``Review **`Source line offsets`** and **`Sanitization`** in spec.md``
 
-All four findings were addressed in `spec.md`. The review below records the
-findings before those changes.
+One minor ambiguity found:
 
-Review of "Source line offsets" and "Sanitization & hydration" (spec.md)
-========================================================================
+* **[P3] “No attributes” needs clarification** — `spec.md:251`. Adding `l-n`
+  to `add_tags` still permits generic attributes. The existing configuration
+  allows `id` and `data-gather`; Ammonia also defaults to allowing `lang` and
+  `title`. If all attributes must be stripped, specify an attribute filter for
+  `l-n`. Otherwise, say “add no tag-specific attributes.” See
+  [Ammonia's attribute handling](https://docs.rs/ammonia/4.1.2/src/ammonia/lib.rs.html#1905-1945).
 
-Scope: the "Source line offsets" and "Sanitization & hydration" sections in
-`spec.md`. Findings were checked against `server/src/lexer.rs`,
-`server/src/lexer/pest_parser.rs`, and `server/src/processing.rs`, with focused
-lexer/parser probes.
-
-Findings
---------
-
-### 1. One offset cannot represent merged block comments (P2)
-
-At `spec.md:186`, the formula assumes contiguous source lines. The JavaScript
-lexer merges `/*\nFirst\n*/\n/*\nSecond\n*/\n` into one doc block. With
-`o_i = 1`, it maps `Second` to line 4 instead of 5.
-
-**Suggest:** Preserve removed boundary lines or record separate mapping
-segments for each original comment.
-
-### 2. Source heights need an explicit lexer correction (P2)
-
-At `spec.md:192`, `code_doc_block_lines` returns `DocBlock.lines`, but both
-lexer paths currently derive that field from processed contents. For
-`/*\nA\n*/\n// B\n`, the JavaScript lexer reports the first block's height as
-2; it occupies 3 source lines.
-
-**Suggest:** Specify correcting source-height accounting alongside adding
-`contents_line_offset`, or subsequent tags remain displaced.
-
-### 3. Raw math HTML can violate the hydration invariant (P2)
-
-At `spec.md:228`, consider
-`A <span class="math math-inline">x\ny</span>.`. Placement inserts a tag before
-`y`, giving the math span three children. `replace_math_node` then rejects it
-because it requires one text child. The dehydration pre-pass happens too late
-to prevent this rendering regression.
-
-**Suggest:** Require suppression or removal and text-node merging before
-hydration, with a regression case.
-
-### 4. Splitting only on LF misses lone-CR line endings (P2)
-
-At `spec.md:171`, `a\rsecond\rthird` produces three Markdown lines in
-pulldown-cmark, but the proposed map assigns all content to line 1.
-
-**Suggest:** Recognize lone CR as well as LF and CRLF, or normalize before
-parsing while preserving the offset correspondence.
+No substantive issues found in **Source line offsets**. The per-line mapping
+handles stripped delimiters, merged comments, empty comments, and final lines
+without a newline consistently.
 
 #### Implementation review rounds
 
