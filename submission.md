@@ -1,10 +1,9 @@
 Project 2 submission
 ====================
 
-Team name: (team name)
+Team name: Line number support 2
 
-The specification consists of the file [spec.md](spec.md). (Update this with the
-name of your specification.)
+The specification consists of the file [spec.md](spec.md).
 
 Draft submission
 ----------------
@@ -75,7 +74,6 @@ GitHub userid: nurlybek-aimagambetov
 
 (LLM output, possibly with strikethrough)
 
-
 Final submission
 ----------------
 
@@ -85,188 +83,224 @@ GitHub userid: kmuzanbekova
 
 #### Contributions
 
-Reviewed the Tag format section (`spec.md`, lines 50–77) against `server/src/processing.rs` and `server/src/processing/cache.rs`, identifying 10 edge cases and semantic gaps that were all resolved in the updated specification.
+Reviewed and finalized the `Tag format & lookup` and `Placement` sections of
+`spec.md` across five review rounds, resolving 37 findings covering Server tag
+injection, raw-text suppression, `LineMap` wiring, and Client caret placement.
 
 #### Specification review rounds
 
-| Round | Scope | Findings | Resolved |
-| :--- | :--- | :--- | :--- |
-| 1 | `Tag format` (`spec.md`, lines 50–77) | 10 (5 important, 1 moderate, 2 minor, 2 nit) | 10 (9 applied directly; 1 resolved via warning + save-time strip) |
+| Round | Scope                                               | Findings                                     | Resolved                                                                                                                                                                                                                                                                  |
+| ----- | --------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | `Tag format` (`spec.md`, lines 50–77)               | 10 (5 important, 1 moderate, 2 minor, 2 nit) | 10 (9 applied directly; 1 resolved via warning + save-time strip)                                                                                                                                                                                                         |
+| 2     | `Placement` (`spec.md`, lines 76–170)               | 7 (2 important, 1 moderate, 3 minor, 1 nit)  | 7 (unified `Html`/`InlineHtml` raw-text \& warning scanner, clarified continuation-line tags, specified post-check suppression timing and `range.start` mapping, fixed `parse_doc_block` error wording)                                                                    |
+| 3     | `Tag format & lookup` (`spec.md`, lines 39–75)      | 8 (3 important, 2 moderate, 2 minor, 1 nit)  | 8 (escaped hand-written `<l-n` tags with `log::warn!`, defined value-based lookup and container selection, updated mid-line semantics, fixed `cc-qSbTxGyL2n` cross-reference, defined valid tag syntax, and tightened wording/wrapping)                                   |
+| 4     | `Placement` (`spec.md`, lines 88–183)               | 6 (2 important, 3 moderate, 1 nit)           | 6 (added rule and test to skip `<l-n>` subtrees on Client caret entry, reset raw-text suppression at boundaries with `log::warn!`, defined two-state scanner rules, fixed start-of-line `<textarea>` test example, specified `markdown_to_html` signature and `is_toc` wiring, and tightened wording/wrapping) |
+| 5     | `Tag format & lookup` \& `Placement` (lines 39–194) | 6 (4 moderate, 2 nit)                        | 6 (replaced lookaheads and Unicode regex flags with ASCII-only `(?i-u)` patterns, restricted `InlineHtml` openers to offset 0, specified suppression reset timing and recorded opener line warning, defined `LineMap`, clarified `None` escaping behavior, and added `--!>` comment closer) |
 
 #### Last specification review
 
-**LLM used:** Claude Opus 5.5 Medium (Cursor)  
-**Prompt used:** `Review the section named "Tag format" in spec.md, writing findings to review.md`
+**LLM used:** Claude Opus 5.5 Medium (Cursor)
+**Prompt used:** `Review the sections named "Tag format & lookup" and "Placement" in @spec.md together, and writing findings to @review.md. Report only real bugs, contradictions, or missing details (no redesigns).`
 
+All 6 findings in this round were resolved in `spec.md`.
 
-Review of "Tag format" (`spec.md`, lines 50–77)
-===============================================
+Review of "Tag format & lookup" and "Placement" (spec.md, lines 39–194)
+=====================================================================
 
-Scope: the `<h2 id="cc-T4yjQxfetF">Tag format</h2>` section only. Other
-sections are cited where they contradict it or where it depends on them.
-Statements about the code were checked against `server/src/processing.rs`
-(`markdown_to_html`, `render_fragment_content`) and `server/src/processing/cache.rs`.
+Scope
+-----
+
+This review covers `<h2 id="cc-T4yjQxfetF">Tag format &amp; lookup</h2>`
+(spec.md:39–86) and `<h2 id="cc-gpOIpo2gjZ">Placement</h2>` (spec.md:88–194),
+read together. Other sections were read only for context. Claims about the
+code were checked against the `line-number-support-2` branch:
+`server/src/processing.rs` (`markdown_to_html`, `source_to_codechat_for_web`,
+the `DOC_BLOCK_SEPARATOR_*` constants, `doc_blocks_to_dom`,
+`parse_doc_block`, `render_fragment_content`), `server/Cargo.toml`, and
+`Cargo.lock`, which pins pulldown-cmark 0.13.6 (its `html.rs` writer was
+read). Nothing was built or run.
 
 Summary
 -------
 
-The section's syntax rules hold up: the digits, the lack of attributes, the
-element name, and the difference from `cc-line-number`. The two
-*semantic* bullets (lines 59–65) promise more than the Placement rules
-deliver. Those two bullets are what consumers will rely on, so they need the
-most work. Findings are ordered most important first.
+All six findings from the previous round are fixed. Four problems remain:
+
+* The regexes in both sections use lookahead, which the project's only regex
+  crate (`regex = "1"`) rejects. They also use Unicode `\s` and Unicode case
+  folding, so the scanner can decide a raw-text element has closed when
+  html5ever hasn't. Tags then land inside RCDATA, where dehydration can't
+  strip them, so they get saved.
+* An opener inside an inline HTML attribute value still turns suppression on.
+  In a Markdown document, nothing resets it before the end of the input. In
+  one ordering it also gets the scanner out of step with html5ever and
+  corrupts saved text.
+* The suppression reset at doc block separators doesn't say where it happens,
+  and the required warning has no source line to report.
+* `LineMap` is part of the new signature but is defined nowhere.
 
 Findings
 --------
 
-### 1. "Content between tags" claim is false for multi-line inline events (important)
+~~### 1. The regexes can't compile, and their Unicode matching disagrees with html5ever (moderate)~~
 
-Lines 60–62 say content between two tags came from the first tag's line "or a
-later one with no inline content of its own". Placement inserts a tag only
-before a trigger whose range *starts* on a new line (Placement, condition 2).
-A single trigger event can span lines, so the line where it continues has
-inline content but no tag:
+The hand-written-tag regex `(?i)<(/?l-n(?=[\s/>]))` (spec.md:81) and the
+scanner's opener and closer patterns (spec.md:165, 168) all use `(?=…)`.
+`server/Cargo.toml:84` depends only on `regex = "1"`. That crate has no
+lookaround, so `Regex::new` fails, and the `LazyLock::new(|| …unwrap())`
+pattern used for every other regex in `processing.rs` would panic the first
+time it runs. `Cargo.lock` has no `fancy-regex`.
 
-* a code span: `` `a`` + newline + ``b` `` is one `Code` event;
-* inline math spanning lines (one `InlineMath`/`DisplayMath` event);
-* inline HTML split across lines, e.g. `<span` + newline + `class="x">`;
-* inline HTML suppressed by the raw-text rule (`<textarea>` … across lines);
-* an image whose alt text spans lines (opaque, per Exceptions).
+Getting rid of the lookahead isn't enough by itself. With the `regex` crate's
+default Unicode mode, the patterns match things html5ever doesn't:
 
-Lines inside opaque *block* contexts are also mis-described. A fenced code
-block's lines, and an HTML block's lines (including the doc block
-separators), have rendered content but no tags. "No inline content of its own"
-is a stretch for them.
+* `\s` matches U+000B and U+00A0, among others. html5ever ends a tag name
+  only at tab, LF, FF, space, `/`, or `>`.
+* `(?i)` uses simple case folding, so `s` also matches U+017F (`ſ`). html5ever
+  lowercases only ASCII.
 
-**Suggest:** say "or a later line which received no tag", and point to
-Exceptions for the reasons a line receives none.
+If this happens on an opener, the only effect is missing tags. If it happens
+on a closer, the result is corruption. Take `x <textarea>a` followed on the
+next line by `</textarea\u{A0}>b c`. The scanner sees a closer and ends
+suppression. html5ever is still in RCDATA, so the tag placed before `b` is
+textarea text. The dehydration pre-pass can't remove it, and the literal
+`<l-n>2</l-n>` is saved.
 
-### 2. Content before the first tag and after the last tag is not described (important)
+**Suggest:** Give the patterns in a form the `regex` crate accepts, with ASCII
+semantics. For example, `(?i-u)<(/?l-n)([\t\n\x0C\r />])` replaced with
+`&lt;$1$2`. Consuming the boundary byte is harmless here: the scanner only
+needs match positions, and the escape writes that byte back. Use the same
+`(?i-u)` and `[\t\n\x0C\r />]` in the opener and closer patterns. (CR can't
+appear after the lexer's normalization, but Markdown documents aren't
+normalized, so keep it.)
 
-The "between tags" bullet covers only content that has a tag on both sides.
-Two other cases need a rule:
+~~### 2. An opener in an inline attribute value still disables tags, and can lead to corruption (moderate)~~
 
-* Content before the first tag. Examples are an HTML block or fenced code
-  block at the top of a document, and, in source files, the separator HTML
-  that `source_to_codechat_for_web` puts before each doc block.
-* Content after the last tag.
+The reset added in the previous round only works at doc block separators
+(spec.md:173–178). A Markdown document has no separators. So
+`<a title="<select> menu">x</a>` drops every later tag in the document, with
+only a warning at the end of the input. The parenthesis in the spec says the
+reset stops such false positives "from dropping tags in later blocks". For
+Markdown documents, which include `spec.md` itself, that isn't true.
 
-Lookup (line 64) has the same gap. For a requested line `N` lower than every
-tag's number, the "last tag whose number is at most `N`" doesn't exist, and
-the section doesn't say what a consumer should do.
+The same false positive can also get the scanner out of step with html5ever
+so that tags land in the wrong place:
 
-**Suggest:** say that content after the last tag belongs to that tag's line or
-later lines. Say that content before the first tag, and a lookup that finds
-no tag, map to "no position" (or to the start of the container), and that
-consumers must handle that case.
+```markdown
+<a title="<!--">x</a> <textarea>a
+b <!-- c --> d
+</textarea>
+```
 
-### 3. Ordering and uniqueness are asserted, not guaranteed by Placement (important)
+1. The scanner treats the attribute's `<!--` as an open comment, so it skips
+   the real `<textarea>` opener.
+2. It closes the "comment" at `-->` on line 2.
+3. Line 3's `</textarea>` is inline HTML (only an *opening* `<textarea` starts
+   a type 1 HTML block), and suppression is now off, so it gets
+   `<l-n>3</l-n>`. html5ever is still in RCDATA at that point, so the tag
+   becomes textarea text and is saved.
 
-Line 63 promises "increasing order of `N`, and at most once for each `N`". The
-only Placement rule behind this is condition 3, "that line *differs* from the
-line of the last tag inserted". That rule prevents a repeat only on
-consecutive triggers. The guarantee therefore depends on an unstated
-assumption: pulldown-cmark emits trigger events with non-decreasing start
-offsets, and the line map is monotonic. Both are probably true with
-`Options::all()` today. The spec should still either:
+**Suggest:** In the Unsuppressed state, accept an opener in an `InlineHtml`
+event only at byte offset 0. pulldown-cmark emits each inline HTML construct
+(one tag, one comment, one processing instruction, and so on) as its own
+`InlineHtml` event. So an opener later in that event is always inside an
+attribute value, and html5ever never treats it as an opener. Keep the current
+anywhere-in-the-event search for closers in `InlineHtml`, because RCDATA and
+raw text end at any `</name`, even one inside a quoted value. Also keep it for
+openers in `Html` events, where one line can hold several tags. Correct the
+parenthesis so it doesn't claim coverage for Markdown documents.
 
-* make condition 3 "is greater than the line of the last tag inserted", so
-  the guarantee holds by construction; or
-* state the monotonicity assumption, and require a test that checks the
-  ordering over the whole test corpus.
+~~### 3. Where the reset happens and what the warning reports aren't defined (moderate)~~
 
-### 4. The guarantees don't hold in the Client, where the consumers run (important)
+spec.md:173–175 says to "reset suppression at every doc-block separator" and
+to warn "with the file path and line number". Three things are missing:
 
-Line 32 says tags exist "in the Client and in the Server's intermediate HTML".
-The scroll-sync consumer (Consumers, line 422) reads the Client's DOM. The
-Client's DOM can break every bullet in this section:
+* **How a separator is recognized.** No pulldown-cmark event marks a
+  separator. The adapter has to match the separator text or use the segment
+  boundaries in the line map. Neither method is named.
+* **Whether the reset happens before or after the separator's own `Html`
+  events are scanned.** The order matters. Line 3 of the separator
+  (`processing.rs:305`) is `</pre></script></style></textarea>-->?>]]>`. If
+  the reset happens when the first `<CodeChatEditor-fence>` line arrives, then
+  any open `script`, `style`, or `textarea` target, or a comment from an HTML
+  block, is still open at that point, so the reset warns. The spec says
+  comments "are closed by the separator itself", and `parse_doc_block`
+  accepts such a comment (`processing.rs:1635–1637`), so this warning is
+  wrong. If the reset happens after the separator has been scanned, those
+  targets close normally and only real false positives warn.
+* **Which line the warning reports.** Every separator line maps to `None`
+  (spec.md:252–253), and end of input has no line. The only line worth
+  reporting is the opener's line.
 
-* **Copy and paste in TinyMCE** duplicates or reorders `l-n` elements, because
-  they are valid elements (`extended_valid_elements`). That breaks "at most
-  once" and "increasing order".
-* **Typed text:** Sanitization (line 340) admits that text can be typed into a
-  tag. Dehydration (line 375) describes a cursor marker inside one. Both break
-  "no content other than `N`".
-* **Stale numbers** after Client edits (Re-translation, line 396).
-* **Hydration removes tags** inside `<xref>` content (line 343), so the
-  Client's HTML is not the same as `markdown_to_html` output.
+**Suggest:** Record the opener's source line when suppression starts and
+report that line in the warning. Reset when the first event at or after the
+next segment's `start_md_line` arrives. At that point all of the separator's
+`Html` events have been scanned. Also reset after the last event.
 
-**Suggest:** limit the bullets explicitly to HTML produced by
-`markdown_to_html`. Add a sentence saying that consumers of the Client DOM
-must tolerate out-of-order, duplicate, stale, or non-numeric tags. For
-example: parse `textContent` defensively and skip tags that fail to parse.
+~~### 4. `LineMap` is used in the signature but never defined (moderate)~~
 
-### 5. Hand-written `l-n` elements break the guarantees and are silently deleted (important)
+spec.md:90 adds `Option<&LineMap>`, but no section defines `LineMap`. The
+section on source line offsets (spec.md:198–254) describes three different
+things: a byte-offset-to-Markdown-line table built from "the exact input
+bytes", the identity-plus-one mapping for Markdown documents, and per-block
+segments for source files. The spec doesn't say:
 
-The reservation paragraph (lines 67–68) says only that dehydration removes a
-hand-written `l-n`. Until the next save, though, a hand-written
-`<l-n>999</l-n>` passes through as `InlineHtml` and survives `AMMONIA_OPTIONS`
-(which now allow it). It then sits among the generated tags, so ordering and
-uniqueness are broken for every consumer. On save, its content is silently
-deleted, which is data loss with no warning. The `plaintext` case (line 195)
-sets a precedent here: there, `parse_doc_block` reports what it hides.
+* whether `LineMap` holds the line-start offsets, or `markdown_to_html`
+  computes them from its `markdown` argument. If the caller computes them, it
+  must use exactly the string that is passed.
+* what the Markdown document caller (`processing.rs:1024`) passes when
+  `is_toc` is false. It has no segments, so it needs an identity variant or
+  segments built specially.
+* who builds the segments. The natural place is the fold at
+  `processing.rs:1072–1076`, which is where spec.md:245 says to record them.
 
-**Suggest:** have the Placement adapter drop `InlineHtml`/`Html` events that
-are `l-n` elements, or strip them in hydration, so only generated tags exist
-in the HTML. Have `parse_doc_block` report hand-written ones. Mention the
-user-visible consequence here.
+**Suggest:** Define the type, for example
+`enum LineMap { Document, Segments(Vec<(usize, Vec<usize>)>) }`, with the
+line-start table computed inside `markdown_to_html`. State what each caller
+passes.
 
-### 6. Lookup scope is undefined for source files (moderate)
+~~### 5. What `None` turns off isn't stated (nit)~~
 
-"A consumer looking up line `N` uses the last tag whose number is at most `N`"
-doesn't say *where* to search. In a source file, each doc block's HTML is a
-separate container, and code-block lines (shown by CodeMirror) have no tags.
-A whole-document search for a code line `N` returns a tag in an earlier doc
-block, which is the wrong pane. A per-doc-block search can find nothing.
+According to spec.md:91, `None` means "emit no tags". That leaves two
+questions open. Does the hand-written-tag escape (spec.md:80–86), which runs
+"before tag injection", still run? And what source line does its required
+warning report when there's no map? If the escape is skipped, a hand-written
+`<l-n>` in the sidebar TOC is hidden by `l-n { display: none; }`. If it runs,
+TOC output and the output of every test that passes `None` change. Say which
+one applies. If the escape runs, also say that the warning leaves out the
+line.
 
-**Suggest:** define the lookup per container (a doc block, or a Markdown
-document's body). State that lines belonging to code blocks are resolved by
-CodeMirror, not by tags.
+~~### 6. `--!>` closes a comment in html5ever but not in the scanner (nit)~~
 
-### 7. Contradiction with the introduction (minor)
-
-The intro (line 24) says a tag appears "before the rendered content of each
-source line". The section says "Lines may be skipped" (line 63–64), and
-Exceptions lists many lines that get none. Reword the intro to say "of each
-source line with inline content, with the exceptions listed below", so the
-two statements agree.
-
-### 8. "Matching CodeMirror's gutter" needs a qualifier for Markdown documents (minor)
-
-Line 55 ties `N` to CodeMirror's gutter. A Markdown document has no CodeMirror
-view in the Client, so the reference that applies there is the IDE's line
-number. The claim is correct for source files: `render_fragment_content` and
-the gutter both count from 1 and sum `code_doc_block_lines` (checked at
-`processing.rs:2185`). Suggest "matching the IDE's line numbers, CodeMirror's
-gutter, and `render_fragment_content`".
-
-### 9. Custom-element rationale: add the constraint it implies (nit)
-
-Being a valid custom element name means `l-n` parses as `HTMLElement`, not
-`HTMLUnknownElement`, and that the name *could* be registered. Add a sentence
-saying that the Client must never call `customElements.define("l-n", …)`.
-Upgrading the element could render content or change how TinyMCE handles it.
-
-### 10. Digit format vs. the comparison regex (nit)
-
-Line 56 forbids leading zeros and requires at least one digit. The
-`compare_html` regex (line 394), `<l-n>[0-9]*</l-n>`, also matches `<l-n></l-n>`
-and `<l-n>007</l-n>`. That is harmless, but say whether the looseness is
-intended (so hand-written or emptied tags are tolerated) or use `[0-9]+` for
-consistency.
+The HTML tokenizer also ends a comment at `--!>`. The scanner looks only for
+`-->` (spec.md:169), so `<!-- a --!>` in an HTML block leaves the scanner
+suppressed until the next `-->` or the next reset. The result is only missing
+tags. Either add `--!>` to the closer, or list it with the accepted false
+positives.
 
 What's sound
 ------------
 
-* The syntax rules (ASCII digits, no attributes, a short name) are clear and
-  testable.
-* The name choice is justified correctly: the hyphen guarantees no collision
-  with a standard HTML element.
-* The section separates `l-n` tags from the `cc-line-number` spans clearly.
-  The description of those spans matches `render_fragment_content`
-  (`processing.rs:2152–2241`).
-* The cache claim in the intro matches `cache.rs`: `_line` fields exist at
-  lines 258 and 277, filled from `fact.line`.
+* The tag format matches `render_fragment_content`'s 1-based numbering
+  (`processing.rs:2179–2185`). Strict monotonicity holds for the whole
+  `markdown_to_html` call: events arrive in source order, and the
+  content-line maps are strictly increasing within and across blocks.
+* The lookup rule is consistent with the placement rules. Every untagged line
+  (fences, HTML blocks, suppressed text, continuation lines) resolves to the
+  nearest earlier tag in its container, or to no position.
+* Raw-text suppression doesn't need an opaque-depth reset. A doc block's
+  unterminated fence ends at the separator's backtick or tilde fence, and an
+  `Image` can't cross a blank line.
+* The separator has no raw-text opener and no `<!--`, so scanning it can't
+  turn suppression on.
+* The trigger list and the opaque set match pulldown-cmark 0.13.6's writer:
+  * `raw_text` (`html.rs:479`) pulls the alt-text events through the adapter,
+    so depth counting sees them.
+  * `in_non_writing_block` suppresses `Text` but not `InlineHtml`, which is
+    why `MetadataBlock` must be opaque.
+* The Example output matches existing minified output. For example,
+  `translation.rs:1966` shows `<li><input checked type=checkbox>Task list`,
+  with no space after the checkbox.
+
 
 #### Implementation review rounds
 
@@ -284,31 +318,39 @@ GitHub userid: exekerey
 
 #### Contributions
 
-Reviewed the Dehydration, Re-translation & diffs, and Testing sections (`spec.md`) against `server/src/processing.rs`, `server/src/translation.rs`, and `client/src/CodeMirror-integration.mts` over two review rounds, revising them to use a separate tag-removal pre-pass, state how long tags stay stale, scope diff amplification to source files, and add discriminating test cases.
+Reviewed the Dehydration, Re-translation \& diffs, and Testing sections
+(`spec.md`) against `server/src/processing.rs`, `server/src/translation.rs`, and
+`client/src/CodeMirror-integration.mts` over two review rounds, revising them to
+use a separate tag-removal pre-pass, state how long tags stay stale, scope diff
+amplification to source files, and add discriminating test cases.
 
 #### Specification review rounds
 
-| Round | Scope | Findings | Main changes made |
-| :--- | :--- | :--- | :--- |
-| 1 | Dehydration, Re-translation & diffs, Testing | 9 (4 important, 2 moderate, 2 minor, 1 nit) | Tag removal moved to a separate pre-pass that merges split text nodes; staleness window stated (corrected only by IDE-originated edits); shared `strip_line_number_tags` helper and `translation.rs` tests; diff amplification limited to source files with a measurable TODO; tests added for dehydration edge cases, comparison, and diff amplification |
-| 2 | Dehydration, Re-translation & diffs, Testing | 10 (2 important, 7 moderate, 1 minor) | Line-offset test corrected for `render_fragment_content`'s `o_i` difference; diff-amplification test now checks `contents`, not just an `Update`; pre-pass call sites named and `<xref>` case dropped; cursor-marker cases clarified and made unit-testable; strip order fixed; Consumers marked out of scope; partly rejected (#7 premise, most of #8, parts of #9 and #10) |
-| 3 | Dehydration, Re-translation & diffs, Testing | 7 (1 important, 2 moderate, 3 minor, 1 nit) | Existing exact-HTML tests in `overall_*.rs` and `ide/vscode/tests.rs` are updated to include tags; cursor-marker test states the expected text after re-wrapping; comparison covers a tag missing on one side; staleness wording fixed (any sent re-translation corrects tags); test that both dehydration paths run the pre-pass; dropped the unworkable gutter-number check (all 7 applied) |
+| Round | Scope                                         | Findings                                    | Main changes made                                                                                                                                                                                                                                                                                                                                                                             |
+| ----- | --------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Dehydration, Re-translation \& diffs, Testing | 9 (4 important, 2 moderate, 2 minor, 1 nit) | Tag removal moved to a separate pre-pass that merges split text nodes; staleness window stated (corrected only by IDE-originated edits); shared `strip_line_number_tags` helper and `translation.rs` tests; diff amplification limited to source files with a measurable TODO; tests added for dehydration edge cases, comparison, and diff amplification                                     |
+| 2     | Dehydration, Re-translation \& diffs, Testing | 10 (2 important, 7 moderate, 1 minor)       | Line-offset test corrected for `render_fragment_content`'s `o_i` difference; diff-amplification test now checks `contents`, not just an `Update`; pre-pass call sites named and `<xref>` case dropped; cursor-marker cases clarified and made unit-testable; strip order fixed; Consumers marked out of scope; partly rejected (#7 premise, most of #8, parts of #9 and #10)                  |
+| 3     | Dehydration, Re-translation \& diffs, Testing | 7 (1 important, 2 moderate, 3 minor, 1 nit) | Existing exact-HTML tests in `overall_*.rs` and `ide/vscode/tests.rs` are updated to include tags; cursor-marker test states the expected text after re-wrapping; comparison covers a tag missing on one side; staleness wording fixed (any sent re-translation corrects tags); test that both dehydration paths run the pre-pass; dropped the unworkable gutter-number check (all 7 applied) |
 
 #### Last specification review
 
-**LLM used:** Claude Opus 5.5 (Claude Code)  
-**Prompt used:** `Review the sections named "Dehydration", "Re-translation & diffs" (including its "Consumers" subsection), and "Testing" in spec.md (lines 231–313), writing findings to review.md`, followed by a paragraph limiting scope to those sections, listing the source files to check claims against, and asking for only relevant findings (no redesigns).
+**LLM used:** Claude Opus 5.5 (Claude Code)
+**Prompt used:** `Review the sections named "Dehydration", "Re-translation & diffs" (including its "Consumers" subsection), and "Testing" in spec.md (lines 231–313), writing findings to review.md`, 
+followed by a paragraph limiting scope to those sections, listing 
+the source files to check claims against, and asking
+for only relevant findings (no redesigns).`
 
-All findings in this round were applied; none were deemed incorrect or irrelevant.
+All findings in this round were applied; none were deemed incorrect or
+irrelevant.
 
-
-Review of "Dehydration", "Re-translation & diffs", and "Testing" (spec.md, lines 231–313)
-==========================================================================================
+Review of "Dehydration", "Re-translation \& diffs", and "Testing" (spec.md,
+lines 231–313)
+===========================================================================
 
 Scope
 -----
 
-This review covers only "Dehydration" (spec.md:231–234), "Re-translation &
+This review covers only "Dehydration" (spec.md:231–234), "Re-translation \&
 diffs" with its "Consumers" subsection (spec.md:236–252), and "Testing"
 (spec.md:255–312). Other sections were read only for context. Statements about
 existing code were checked against the `line-number-support-2` branch, mainly
@@ -319,47 +361,47 @@ the existing test files. Nothing was built or run.
 Summary
 -------
 
-The three sections are mostly sound. Every claim about current code checks
-out: the two callers of `dehydrating_walk_node`, the replacements it doesn't
-descend into, where `html_to_dom` places the marker, the order of the
-`compare_html` normalizations, `DocBlockWidget.eq` ignoring positions, and
-Markdown documents using `setContent`. The main gap is in Testing. Several
-existing tests outside the three listed files assert tag-free HTML and will
-fail, and the spec's rule for such tests can't be applied to them. The other
-findings are one ambiguous expected result, two missing test cases for
-behavior these sections define, and two small inaccuracies.
+The three sections are mostly sound. Every claim about current code checks out:
+the two callers of `dehydrating_walk_node`, the replacements it doesn't descend
+into, where `html_to_dom` places the marker, the order of the `compare_html`
+normalizations, `DocBlockWidget.eq` ignoring positions, and Markdown documents
+using `setContent`. The main gap is in Testing. Several existing tests outside
+the three listed files assert tag-free HTML and will fail, and the spec's rule
+for such tests can't be applied to them. The other findings are one ambiguous
+expected result, two missing test cases for behavior these sections define, and
+two small inaccuracies.
 
 Findings
 --------
 
-### 1. Existing tests outside listed files break; remedy unusable (important)
+### 1\. Existing tests outside listed files break; remedy unusable (important)
 
 spec.md:257–263 limits new tests to three files and says "Tests not about line
 numbers should compare HTML after deleting tags with `strip_line_number_tags`".
-spec.md:288 requires only that "every existing round-trip test still
-reproduces its source". However, several existing tests assert the exact HTML
-the Server sends, which will now contain tags:
+spec.md:288 requires only that "every existing round-trip test still reproduces
+its source". However, several existing tests assert the exact HTML the Server
+sends, which will now contain tags:
 
 * `server/tests/overall/overall_1.rs:104, 349, 395, 416, 490` and
   `overall_2.rs:503` compare a doc block's `inner_html()` in the browser with
   strings like `"<p>Test</p>"`. The TinyMCE DOM will now hold
-  `<p><l-n>1</l-n>Test</p>`. These are integration tests in a separate crate,
-  so a `pub(crate)` helper (spec.md:240) isn't visible to them.
+  `<p><l-n>1</l-n>Test</p>`. These are integration tests in a separate crate, so
+  a `pub(crate)` helper (spec.md:240) isn't visible to them.
 * `server/src/ide/vscode/tests.rs:1866` and `:1930` expect Server-to-Client
-  translations (`"<p>See <xref …"`) inside whole-`EditorMessage`
-  `assert_eq!`s. Deleting tags from just the HTML would mean taking these
-  structs apart. The file is also missing from the list of test locations.
+  translations (`"<p>See <xref …"`) inside whole-`EditorMessage` `assert_eq!`s.
+  Deleting tags from just the HTML would mean taking these structs apart. The
+  file is also missing from the list of test locations.
 
-An implementer will hit these failures with no guidance. The rule that is
-given can't be followed for the integration tests, and it is awkward to follow
-for the vscode tests.
+An implementer will hit these failures with no guidance. The rule that is given
+can't be followed for the integration tests, and it is awkward to follow for the
+vscode tests.
 
-**Suggest:** Name these files and pick one approach. Either update their
-expected strings to include the tags, or make the helper reachable (for
-example `pub` with `#[doc(hidden)]`) and use it there. For the browser checks
-in `overall_*.rs`, compare against an expected string that includes the tag.
+<strong>Suggest:</strong> Name these files and pick one approach. Either update
+their expected strings to include the tags, or make the helper reachable (for
+example `pub` with `#[doc(hidden)]`) and use it there. For the browser checks in
+`overall_*.rs`, compare against an expected string that includes the tag.
 
-### 2. Expected marker position for a cursor in a tag is ambiguous (moderate)
+### 2\. Expected marker position for a cursor in a tag is ambiguous (moderate)
 
 spec.md:292–294 requires that "for a `dom_location` inside a tag,
 `doc_block_html_to_markdown`'s output holds the marker at the start of that
@@ -367,110 +409,110 @@ tag's line." Dehydration (spec.md:234) defines the behavior differently: the
 marker takes the removed tag's place and merges with the adjacent text.
 `doc_block_html_to_markdown` then re-wraps the paragraph
 (`processing.rs:739–755`), so "that tag's line" usually doesn't exist in the
-output. For example, `<p>a <l-n>2</l-n>b</p>` with the cursor in the tag's
-text becomes `a \u{E83B}b` on one line, so the marker is mid-line. An
-implementer can't tell whether that output passes.
+output. For example, `<p>a <l-n>2</l-n>b</p>` with the cursor in the tag's text
+becomes `a \u{E83B}b` on one line, so the marker is mid-line. An implementer
+can't tell whether that output passes.
 
-**Suggest:** State the result in terms of the text, not the line: the marker
-directly precedes the text that followed the tag. Give one input/output pair,
-such as `<p>a <l-n>2</l-n>b</p>` → `a \u{E83B}b\n`.
+<strong>Suggest:</strong> State the result in terms of the text, not the line:
+the marker directly precedes the text that followed the tag. Give one
+input/output pair, such as `<p>a <l-n>2</l-n>b</p>` → `a \u{E83B}b\n`.
 
-### 3. No comparison test for a tag present on one side only (moderate)
+### 3\. No comparison test for a tag present on one side only (moderate)
 
-Staleness (spec.md:241) says lines typed in the Client "have no tag at all"
-and that "when only tags differ, no re-translation is sent". In practice,
-that is the most common difference: after the save round trip, the Server's
-re-translation (`translation.rs:1317–1328`) tags a line the Client sent
-without one. The Comparison tests (spec.md:299–302) only cover tags that
-differ "only in tag numbers", plus a tag removed together with its text. A
-`compare_html` that stripped tags only when both sides had one would pass
-them all.
+Staleness (spec.md:241) says lines typed in the Client "have no tag at all" and
+that "when only tags differ, no re-translation is sent". In practice, that is
+the most common difference: after the save round trip, the Server's
+re-translation (`translation.rs:1317–1328`) tags a line the Client sent without
+one. The Comparison tests (spec.md:299–302) only cover tags that differ "only in
+tag numbers", plus a tag removed together with its text. A `compare_html` that
+stripped tags only when both sides had one would pass them all.
 
-**Suggest:** Add a case where `compare_html` reports equal for
+<strong>Suggest:</strong> Add a case where `compare_html` reports equal for
 `<p><l-n>1</l-n>a <l-n>2</l-n>b</p>` against the Client's `<p>a b</p>`.
 
-### 4. "Corrected only by the next IDE-originated edit" is inaccurate (minor)
+### 4\. "Corrected only by the next IDE-originated edit" is inaccurate (minor)
 
-spec.md:241 says this, but any re-translation that is actually sent replaces
-the Client's HTML, and its tags with it. That covers a Client save whose round
-trip differs in more than tags (`translation.rs:1317–1328`; for example, a new
-doc block or added math) and a cache-driven re-translation
-(`translation.rs:1594–1615`). The conclusion that consumers must tolerate
-stale tags is still right. Only "only" is wrong.
+spec.md:241 says this, but any re-translation that is actually sent replaces the
+Client's HTML, and its tags with it. That covers a Client save whose round trip
+differs in more than tags (`translation.rs:1317–1328`; for example, a new doc
+block or added math) and a cache-driven re-translation
+(`translation.rs:1594–1615`). The conclusion that consumers must tolerate stale
+tags is still right. Only "only" is wrong.
 
-**Suggest:** "Tags are corrected by the next translation sent to the Client:
-an IDE-originated edit, or a re-translation sent for a non-tag difference."
+<strong>Suggest:</strong> "Tags are corrected by the next translation sent to
+the Client: an IDE-originated edit, or a re-translation sent for a non-tag
+difference."
 
-### 5. Tests don't check that both dehydration callers run the pre-pass (minor)
+### 5\. Tests don't check that both dehydration callers run the pre-pass (minor)
 
 spec.md:232 requires the pre-pass in both the Markdown-document path
 (`processing.rs:500–501`) and `doc_block_html_to_markdown`
 (`processing.rs:736–737`). The required equality test, "Markdown from tagged
 HTML equals Markdown from the same HTML with its tags deleted" (spec.md:297–
-298), doesn't say which path it runs through. If the pre-pass were missing
-from one caller, every test could still pass. Existing round-trip tests won't
-catch this either, because their HTML has no tags.
+298), doesn't say which path it runs through. If the pre-pass were missing from
+one caller, every test could still pass. Existing round-trip tests won't catch
+this either, because their HTML has no tags.
 
-**Suggest:** Require the equality test to run through both
+<strong>Suggest:</strong> Require the equality test to run through both
 `codechat_for_web_to_source` with a Markdown document and a source file's doc
 block.
 
-### 6. "First tag equals gutter + o_i" fails for some required blocks (minor)
+### 6\. "First tag equals gutter + o\_i" fails for some required blocks (minor)
 
 spec.md:282–285 says "A doc block's first tag equals the
 `render_fragment_content` gutter number for that block plus $o_i$." This holds
-only when the block's first content line has inline content. The same
-required file includes an empty doc block and a doc block with an unterminated
-fence (spec.md:279–281). Neither has a tag on its first line. In addition,
+only when the block's first content line has inline content. The same required
+file includes an empty doc block and a doc block with an unterminated fence
+(spec.md:279–281). Neither has a tag on its first line. In addition,
 `render_fragment_content` emits a gutter number only for a doc block inside a
 fragment (`processing.rs:2199`), so the test also needs `<fragment>`s around
 those blocks.
 
-**Suggest:** "For each doc block whose first content line has inline content,
-wrapped in a fragment, the first tag equals …"
+<strong>Suggest:</strong> "For each doc block whose first content line has
+inline content, wrapped in a fragment, the first tag equals …"
 
-### 7. Rationale for the marker landing in a tag is overstated (nit)
+### 7\. Rationale for the marker landing in a tag is overstated (nit)
 
 spec.md:234 says the marker reaches an `l-n` "only through `html_to_dom`'s
-fallback to the last child." `restoreSelection`
-(`CodeChatEditor.mts:564–598`) also re-applies a saved index path after every
-`setContent`/`innerHTML` update (`CodeMirror-integration.mts:538–545`,
-`CodeChatEditor.mts:402–412`). When tags are added or shifted, that path can
-put the caret programmatically inside an `l-n`'s text. The required behavior
-is unaffected, because the pre-pass handles a marker anywhere inside a tag.
+fallback to the last child." `restoreSelection` (`CodeChatEditor.mts:564–598`)
+also re-applies a saved index path after every `setContent`/`innerHTML` update
+(`CodeMirror-integration.mts:538–545`, `CodeChatEditor.mts:402–412`). When tags
+are added or shifted, that path can put the caret programmatically inside an
+`l-n`'s text. The required behavior is unaffected, because the pre-pass handles
+a marker anywhere inside a tag.
 
-**Suggest:** Drop "only", or add "or a programmatic selection restore".
+<strong>Suggest:</strong> Drop "only", or add "or a programmatic selection
+restore".
 
 What's sound
 ------------
 
-* The callers named in spec.md:232 are the only ones
-  (`processing.rs:501, 737`, `processing/tests.rs:3098`), and
-  `dehydrating_walk_node` does skip the children of the nodes it replaces and
-  of `<xref>` (`processing.rs:3247–3262`). The Mermaid/GraphViz (`:3131–3142`),
-  `<pre>`/`<br>` (`:3172–3201`), and math (`:2912–2915`) checks do require a
-  single text child, or only text and `<br>` children. That makes the case for
-  a separate pass, followed by merging adjacent text nodes, correct.
+* The callers named in spec.md:232 are the only ones (`processing.rs:501, 737`,
+  `processing/tests.rs:3098`), and `dehydrating_walk_node` does skip the
+  children of the nodes it replaces and of `<xref>` (`processing.rs:3247–3262`).
+  The Mermaid/GraphViz (`:3131–3142`), `<pre>`/`<br>` (`:3172–3201`), and math
+  (`:2912–2915`) checks do require a single text child, or only text and `<br>`
+  children. That makes the case for a separate pass, followed by merging
+  adjacent text nodes, correct.
 * The marker is inserted during `html_to_dom` (`processing.rs:1489–1515`),
-  before any later pass, and only into a text node, as spec.md:234 says.
-  Leaving a marker-only text node in place of a removed tag keeps the cursor
-  line computation (`translation.rs:1482–1491`) working.
+  before any later pass, and only into a text node, as spec.md:234 says. Leaving
+  a marker-only text node in place of a removed tag keeps the cursor line
+  computation (`translation.rs:1482–1491`) working.
 * The `compare_html` details are accurate. The first argument arrives already
   minified, and the raw side is minified inside the function
-  (`translation.rs:1793–1794`). Stripping before the `<br> `/`<p><iframe `
+  (`translation.rs:1793–1794`). Stripping before the `<br>`/`<p><iframe`
   rewrites (`:1799`, `:1806`) is the right order. `compare_html_walker` only
-  removes TinyMCE data. The pattern `<l-n>[0-9]+</l-n>` leaves escaped
-  code-span text alone and correctly treats malformed Client tags as a
-  difference.
+  removes TinyMCE data. The pattern `<l-n>[0-9]+</l-n>` leaves escaped code-span
+  text alone and correctly treats malformed Client tags as a difference.
 * The diff-amplification analysis matches the code.
   `diff_code_mirror_doc_blocks` tokenizes on `contents`
   (`processing.rs:3392–3396`), `DocBlockWidget.eq` ignores `from`/`to`
   (`CodeMirror-integration.mts:461–469`), and `updateDOM` resets the contents,
-  MathJax, and TinyMCE (`:512–552`). Markdown documents always call
-  `setContent` (`CodeChatEditor.mts:409`). The diff test correctly checks
-  `contents`, not just whether an `Update` exists.
-* The `render_fragment_content` gutter numbers a doc block from its first
-  source line, including a stripped `/*` line (`processing.rs:2185–2189`), as
+  MathJax, and TinyMCE (`:512–552`). Markdown documents always call `setContent`
+  (`CodeChatEditor.mts:409`). The diff test correctly checks `contents`, not
+  just whether an `Update` exists.
+* The `render_fragment_content` gutter numbers a doc block from its first source
+  line, including a stripped `/*` line (`processing.rs:2185–2189`), as
   spec.md:284–285 states.
 * The test locations work: `compare_html` is private, but `mod tests` in
   `translation.rs` can reach it, and `processing/tests.rs` is a child module.
@@ -510,8 +552,9 @@ test requirements.
 
 #### Last specification review
 
-**LLM used:** GPT-6 (Codex)  
-**Prompt used:** ``Review **`Source line offsets`** and **`Sanitization`** in spec.md``
+**LLM used:** GPT-6 (Codex)
+**Prompt used:**
+``Review **`Source line offsets`** and **`Sanitization`** in spec.md``
 
 One minor ambiguity found:
 
