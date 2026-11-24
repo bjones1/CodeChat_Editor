@@ -52,10 +52,11 @@ Definitions
   including the next heading at the same or a higher level (a lower or equal
   number), or to the end of the document. The heading itself isn't part of its
   section. A section may be empty.
-* **Heading key:** the tuple of a heading's level, exact DOM `textContent`
-  excluding collapse controls, and its 1-based occurrence among headings with
-  that same level and text in document order. This key is used only to restore
-  collapsed state after an IDE content update (rule 9); it is not a saved id.
+* **Heading key:** the tuple of a heading's level, its text in the HTML the
+  Server sends (before the Client renders any math in it), and its 1-based
+  occurrence among headings with that same level and text in document order.
+  This key is used only to restore collapsed state after a content update from
+  the Server (rule 9); it is not a saved id.
 
 Rules
 -----
@@ -105,35 +106,40 @@ Rules
    edit with sections collapsed and shown. Also check that collapsing or
    expanding alone sends no document content, and that a cursor after a
    collapse control maps to the same text in both the Client and the IDE.
-7. **Shown when needed:** when the IDE's cursor moves into hidden content,
-   expand every collapsed section hiding that target before placing the
-   Client's cursor there. Receiving an unchanged cursor position along with
-   an IDE update does not itself reopen a section. An IDE scroll position
-   alone never expands a section: if its target is hidden, scroll to the
-   heading of the outermost collapsed section hiding it. If an update includes
-   both a moved cursor and a scroll position, first reveal the cursor target,
-   then resolve the scroll target using the resulting collapsed state.
+7. **Navigation:** moving to hidden content from inside the Client opens every
+   collapsed section hiding it. This covers following a link or
+   cross-reference, and a search or go-to-line that selects hidden content.
+   The cursor and scroll position the IDE sends never open a section. When
+   either points into hidden content (a hidden line of code, or a doc block
+   hidden entirely), the Client scrolls to the heading of the outermost
+   collapsed section hiding it and leaves its own cursor where it was. A line
+   in a doc block that is only partly hidden points to that doc block, which
+   is visible.
 8. **Edits:** before a Client edit that would change hidden content, expand
    every section needed to reveal the affected content, then apply the edit
    with the same result as if that content had been shown. This includes
    Backspace or Delete merging across a collapsed section and replacing or
-   deleting a selection that crosses one, in Markdown and source files.
-   For example 1 with A collapsed, Backspace at the start of C must reveal A's
-   section before merging C into p2; selecting from A to C and typing must
-   reveal the affected hidden content before replacing the selection.
+   deleting a selection that crosses one, in Markdown and source files. Undo
+   and redo are edits too. In example 1, with A collapsed, Backspace at the
+   start of C must reveal A's section before merging C into p2; selecting from
+   A to C and typing must reveal the affected hidden content before replacing
+   the selection.
    A section follows its heading through Client edits. Editing the heading's
    text preserves its collapsed state; changing its level recomputes its end.
    Deleting a heading or turning it into ordinary text removes its collapsed
    state and recomputes visibility. Other collapsed headings retain their own
    state, so this does not necessarily reveal every former descendant.
 9. **Lifetime:** collapsed state lasts only while the file is open in the
-   Client. On each IDE content update, retain the keys of collapsed headings
-   before applying the update and restore collapsed state to the headings with
-   matching keys afterwards. This applies to both incremental updates and full
-   content replacements that rebuild the view, before resolving cursor and
-   scroll targets (rule 7). Discard keys with no match; unmatched new headings
-   start expanded, though a collapsed ancestor may still hide them. Thus an
-   IDE rename or level change normally loses that heading's collapsed state.
+   Client. On each content update from the Server, retain the keys of
+   collapsed headings before applying the update and restore collapsed state
+   to the headings with matching keys afterwards. This covers edits made in
+   the IDE and the re-translations the Server sends on its own (after some
+   saves, or when a cross-referenced target changes). It applies to both
+   incremental updates and full content replacements that rebuild the view,
+   before resolving cursor and scroll targets (rule 7). Discard keys with no
+   match; unmatched new headings start expanded, though a collapsed ancestor
+   may still hide them. Thus an IDE rename or level change normally loses that
+   heading's collapsed state.
    Occurrence matching is deterministic, but inserting or deleting an
    identical heading may transfer the state to another occurrence; tracking
    identity across such changes is out of scope. Opening another file, closing
@@ -147,7 +153,8 @@ Out of scope
 * Commands to collapse or expand every section at once.
 * Headings inside lists, block quotes and tables, which aren't headings by the
   definition above.
-* Tracking heading identity across IDE updates beyond the heading-key rule.
+* Tracking heading identity across updates from the Server beyond the
+  heading-key rule.
 * Folding code by its syntax, which CodeMirror already offers and which stays
   as it is.
 
@@ -157,8 +164,9 @@ Examples
 `H1 A` is a level-1 heading with text `A`; `p1` is a paragraph; `code1` is a
 code block. Each example starts with every section shown unless its Document
 cell specifies otherwise. Results describe visible content and any observable
-save or synchronization behavior. IDE content-update examples leave the cursor
-outside hidden content unless cursor movement is the action being tested.
+save or synchronization behavior. Examples of updates from the Server leave
+the cursor outside hidden content unless cursor movement is the action being
+tested.
 
 | # | Document | Action | Expected result |
 | -- | -- | -- | -- |
@@ -170,15 +178,15 @@ outside hidden content unless cursor movement is the action being tested.
 | 6 | Source file: doc block [`H1 A`, `p1`], `code1`, doc block [`H2 B`], `code2`, doc block [`H1 C`] | Collapse A | Doc block [`H1 A`], doc block [`H1 C`] |
 | 7 | Source file: doc block [`H2 A`, `p1`], `code1`, doc block [`p2`, `H2 B`, `p3`] | Collapse A | Doc block [`H2 A`], doc block [`H2 B`, `p3`] |
 | 8 | Same as 1 | Collapse A, edit p3, wait for autosave | Outgoing document HTML and the saved file equal those from the same edit with A shown; p1, B and p2 remain in the document |
-| 9 | Same as 6, A collapsed | The IDE moves the cursor into `code1` | Every section shown; the cursor in `code1` |
+| 9 | Same as 6, A collapsed | The IDE moves the cursor into `code1` | A stays collapsed; the Client scrolls to A and its cursor stays where it was |
 | 10 | Same as 1, A collapsed | Delete heading A in the Client | `p1`, `H2 B`, `p2`, `H1 C`, `p3` |
 | 11 | Source file: doc block [`H2 A`, `p1`, `H2 B`, `p2`] | Collapse A | Doc block [`H2 A`, `H2 B`, `p2`] |
 | 12 | Same as 1, initially clean | Collapse A, then expand A without editing | No document content sent; no dirty state |
 | 13 | Same as 1, A collapsed | The IDE inserts a paragraph above A | New paragraph, `H1 A`, `H1 C`, `p3`; A remains collapsed |
 | 14 | Same as 1, A collapsed | The IDE renames A to D | `H1 D`, `p1`, `H2 B`, `p2`, `H1 C`, `p3`; D starts expanded |
 | 15 | Same as 1, A collapsed | The IDE sends a full content replacement with the same headings and an edit to p3 | `H1 A`, `H1 C`, edited p3; A remains collapsed |
-| 16 | Same as 6, A collapsed; IDE cursor outside A's section | The IDE scrolls to `code1`, repeating its unchanged cursor position | A stays collapsed; the Client scrolls to A |
-| 17 | Same as 1, A and B collapsed | The IDE moves the cursor into p2 | A and B open before the cursor is placed in p2 |
+| 16 | Same as 6, A collapsed; IDE cursor outside A's section | The IDE scrolls to `code1` | A stays collapsed; the Client scrolls to A |
+| 17 | Same as 1, A and B collapsed; p3 links to an id in p2 | Follow the link in the Client | A and B open; the Client scrolls to p2 |
 | 18 | Same as 1, A collapsed | Backspace at the start of C in the Client | A opens before C merges into p2; result equals the same edit with A shown |
 | 19 | Same as 1, A collapsed | Select from the start of A to the start of C and type `X` | A opens before replacement; document content equals the same replacement with A shown |
 | 20 | Same as 1, A collapsed | Place the Client cursor in C | The position sent to the IDE maps to C, as with A shown |
@@ -210,15 +218,19 @@ Implementation
   an inactive block is moved into or out of TinyMCE. Hidden code must remain
   in the underlying document, and fold decorations must coexist with doc-block
   replacements and syntax folding without overlapping replacement ranges.
-* **IDE updates:** Markdown content is reset with `setContent`; a full source
-  update destroys and recreates the CodeMirror view, while a source diff uses
-  transactions. Preserve and restore heading keys across each path (rule 9),
+* **Updates from the Server:** Markdown content is reset with `setContent`; a
+  full source update destroys and recreates the CodeMirror view, while a
+  source diff uses transactions. Re-translations (`is_re_translation`) take
+  the same paths. Preserve and restore heading keys across each path (rule 9),
   without inserting fold state into the content used as the next diff's base.
   Existing heading ids serve cross-references and must remain unchanged.
-* **Cursor, scroll and edits:** distinguish cursor movement from a repeated
-  cursor position in an IDE update, since the IDE also sends its scroll
-  position. Resolve targets using rule 7 after restoring fold state. Reveal
-  hidden content before an edit affects it (rule 8), including edits crossing
+* **Cursor, scroll and edits:** the IDE sends a line number with every
+  update; in Markdown documents the Client doesn't follow it yet
+  (`scrollToLine` is a `TODO`). After restoring fold state, replace a hidden
+  target with its outermost collapsed heading. In the
+  Client, `followLink`'s `scrollIntoView()` and CodeMirror's search and
+  go-to-line must open the sections hiding their target first. Reveal hidden
+  content before an edit affects it (rule 8), including edits crossing
   doc-block boundaries.
 * **Tests:** cover every example and rule in Client tests in
   [CodeChatEditor-test.mts](CodeChatEditor-test.mts), including raw saves,
