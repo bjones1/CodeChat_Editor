@@ -46,25 +46,49 @@ Definitions
 Rule
 ----
 
-1. **Icon:** each heading shows a button just left of its text: ▾ when its
-   section is shown, ▸ when collapsed. The button can be reached with the
-   keyboard and reports its state (`aria-expanded`). It is the only new
-   control; the heading text stays editable as before.
-2. **Collapse:** clicking ▾ hides the heading's section and shows ▸ instead.
-3. **Expand:** clicking ▸ shows the section again. A subheading that was
-   collapsed before stays collapsed, so expanding a section restores it the way
-   the reader left it.
-4. **Markdown documents:** the section is the elements that follow the heading
-   in the document's contents.
+1. **Icon:** each heading always shows a button just left of its text: ▾
+   when its section is shown, ▸ when collapsed. Tab and Shift+Tab reach and
+   leave the button in document order; Enter or Space activates it. The button
+   has an accessible name identifying its heading and reports its state with
+   `aria-expanded`. Activating it keeps keyboard focus on the button. It is
+   the only new control; the heading text stays editable as before.
+2. **Collapse:** clicking ▾, or activating it with the keyboard, hides the
+   heading's section and shows ▸ instead. The heading itself stays visible.
+   Hidden content cannot receive keyboard focus or be edited while hidden.
+3. **Expand:** clicking ▸, or activating it with the keyboard, shows the
+   section again. A subheading that was collapsed before stays collapsed, so
+   expanding a section restores it the way the reader left it.
+4. **Markdown documents:** the section consists of the elements after the
+   heading in the document's contents, ending before the next heading of the
+   same or a higher level, or at the end of the document. Before an edit that
+   would change hidden content, expand each affected section and any collapsed
+   sections containing it, then apply the edit with the same result as if that
+   content had been shown. This includes Backspace or Delete merging across a
+   collapsed section and replacing or deleting a selection that crosses one.
+   For example 1 with A collapsed, Backspace at the start of C must reveal A's
+   section before merging C into p2; selecting from A to C and typing must
+   reveal the affected hidden content before replacing the selection. The
+   same edit behavior applies to source files (rule 5).
 5. **Source files:** a section can span code and doc blocks. It holds the rest
    of the heading's doc block, every code and doc block after it, and, in the
    doc block holding the heading that ends the section, the content before that
    heading. Lines of code in a collapsed section are hidden, not deleted.
-6. **Never saved:** collapsing doesn't change the document's text. The icons
-   and the collapsed state never appear in the HTML the Client turns back into
-   Markdown, in the updates it sends to the Server, or in the saved file.
-   Saving a document with sections collapsed gives the same file as saving it
-   with every section shown.
+6. **Never saved:** collapsing and expanding change only the Client's view.
+   They do not mark the document as edited or send a document-content update.
+   Icons and all collapse-only elements, attributes, classes and styles must
+   be absent from document HTML sent to the Server, from the Markdown the
+   Server produces from that HTML, and from the saved file. Hidden content
+   remains present and unchanged in that HTML. This applies both to TinyMCE's
+   `save({ format: "raw" })` paths and to direct `innerHTML` reads; relying on
+   TinyMCE's normal serializer alone is insufficient.
+   Cursor positions sent to the IDE and restored in the Client must refer to
+   the same document text as with every section shown: collapse controls must
+   not change child-node paths or text offsets used for cursor mapping.
+   Verify this for Markdown documents and source-file doc blocks by comparing
+   outgoing document HTML and the resulting saved file after the same visible
+   edit with sections collapsed and shown. Also check that collapsing or
+   expanding alone sends no document content, and that a cursor after a
+   collapse control maps to the same text in both the Client and the IDE.
 7. **Shown when needed:** when the cursor or a scroll position from the IDE
    lands inside a collapsed section, that section and any collapsed sections
    holding it are expanded, so the Client never moves to text the reader can't
