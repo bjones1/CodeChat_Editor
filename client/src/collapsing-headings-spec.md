@@ -61,23 +61,19 @@ Definitions
 Rules
 -----
 
-1. **Icon:** each heading always shows a button just left of its text: ▾
-   when its section is shown, ▸ when collapsed. A heading hidden by a collapsed
-   ancestor and its button are both hidden. Tab and Shift+Tab reach and leave
-   visible buttons in document order; Enter or Space activates a focused
-   button. The button has an accessible name identifying its heading and
-   reports its state with `aria-expanded`. Activating it keeps keyboard focus
-   on the button. The heading text stays editable as before. An empty section
-   can be toggled, but no document content is hidden.
-2. **Collapse:** clicking ▾, or activating it with the keyboard, hides the
-   heading's section and shows ▸ instead. The heading itself stays visible.
-   Hidden content cannot receive keyboard focus or be edited while hidden;
-   an edit affecting it first reveals it (rule 8).
-3. **Expand:** clicking ▸, or activating it with the keyboard, shows the
-   section again. A subheading that was collapsed before stays collapsed, so
-   expanding a section restores it the way the reader left it. Automatically
-   expanding a section also preserves collapsed descendants unless they must
-   open to reveal an edit or cursor target (rules 7 and 8).
+1. **Icon:** each heading shows a button before its text: ▾ when its section
+   is shown, ▸ when collapsed. The button is always visible unless its heading
+   is hidden by a collapsed ancestor. It can be reached and activated with the
+   keyboard and reports its state with `aria-expanded`. The heading text stays
+   editable as before.
+2. **Collapse:** activating ▾ hides the heading's section and shows ▸ instead.
+   The heading itself stays visible. If the Client's cursor or either end of
+   its selection is in the section being hidden, move the cursor to the end
+   of the heading and clear the selection. Hidden content cannot receive
+   keyboard focus; an edit affecting it first reveals it (rule 8).
+3. **Expand:** activating ▸ shows the section again. A subheading that was
+   collapsed before stays collapsed, unless it must open to reveal an edit
+   (rule 8).
 4. **Markdown documents:** the section consists of the elements after the
    heading in the document's contents, ending before the next heading of the
    same or a higher level, or at the end of the document.
@@ -88,24 +84,17 @@ Rules
    there is no ending heading, it contains everything through the end of the
    file. Hiding part of a doc block leaves its other content visible. Code in
    a collapsed section is hidden, not deleted.
-6. **Never saved:** collapsing and expanding change only the Client's view.
-   They do not mark the document as edited or send a document-content update.
-   Icons and all collapse-only elements, attributes, classes and styles must
-   be absent from document HTML sent to the Server, from the Markdown the
-   Server produces from that HTML, and from the saved file. Hidden content
-   remains present and unchanged in that HTML. This applies both to TinyMCE's
-   `save({ format: "raw" })` paths and to direct `innerHTML` reads; relying on
-   TinyMCE's normal serializer alone is insufficient. Existing heading ids and
-   other document attributes must be preserved; collapsing adds no saved ids.
-   Cursor positions sent to the IDE and restored in the Client must refer to
-   the same document text as with every section shown. Paths and offsets used
-   for synchronization must describe the document without collapse controls,
-   even if the displayed DOM contains them.
-   Verify this for Markdown documents and source-file doc blocks by comparing
-   outgoing document HTML and the resulting saved file after the same visible
-   edit with sections collapsed and shown. Also check that collapsing or
-   expanding alone sends no document content, and that a cursor after a
-   collapse control maps to the same text in both the Client and the IDE.
+6. **Never saved:** collapsing and expanding do not mark the document as edited
+   or send document content. All content, including hidden content, is kept;
+   collapse controls and state are absent from HTML sent to the Server, the
+   Markdown the Server produces, and the saved file. Existing document
+   attributes, including heading ids, are preserved. Cursor paths and offsets
+   describe the document without collapse controls. Moving the cursor under
+   rule 2 may still send a normal cursor update.
+   Check both raw TinyMCE saves and direct `innerHTML` reads: after the same
+   visible edit, outgoing content and the saved file must match those with all
+   sections shown. Toggling alone sends no document content; a cursor in visible
+   text maps to the same text with sections collapsed or shown.
 7. **Navigation:** moving to hidden content from inside the Client opens every
    collapsed section hiding it. This covers following a link or
    cross-reference, and a search or go-to-line that selects hidden content.
