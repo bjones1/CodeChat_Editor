@@ -79,6 +79,8 @@ const MAX_MESSAGE_LENGTH: usize = 50000;
 
 /// A regex to determine the type of the first EOL. See 'PROCESSINGS\`.
 pub static EOL_FINDER: LazyLock<Regex> = LazyLock::new(|| Regex::new("[^\r\n]*(\r?\n)").unwrap());
+/// A line marker, as `markdown_to_html` produces it and `minify` serializes it.
+static LINE_MARKER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<l-n>\d+</l-n>").unwrap());
 
 // Data structures
 // ---------------
@@ -1224,9 +1226,18 @@ impl TranslationTask {
         // The version of the Client's contents after applying the diff.
         version: f64,
         // The re-translation.
-        code_mirror_translated: CodeMirror,
+        mut code_mirror_translated: CodeMirror,
         // False if the Client's queue is closed.
     ) -> bool {
+        // Send a doc block which differs from the Client's only in line markers
+        // as the Client has it.
+        // <fragment id="cc-3Q7ZgTnUbT"></fragment>
+        if let Some(client_doc_blocks) = &self.code_mirror_doc_blocks {
+            keep_client_doc_block_contents(
+                &mut code_mirror_translated.doc_blocks,
+                client_doc_blocks,
+            );
+        }
         let client_contents =
             self.diff_code_mirror(metadata, before_version, version, &code_mirror_translated);
         debug!(
@@ -1778,7 +1789,11 @@ fn compare_html_walker(node: &Rc<Node>) {
 
 // TinyMCE replaces newlines inside paragraphs with a space and (I think) avoids
 // surrogate pairs by breaking them into a series of UTF-16 characters.
-// Therefore, to compare HTML, normalize HTML touched by TinyMCE first.
+// Therefore, to compare HTML, normalize HTML touched by TinyMCE first. Line
+// markers are ignored: an edit which moves lines renumbers them, and sending a
+// re-translation for that alone would disturb the user's editing. The Client's
+// markers stay stale until the next translation which isn't a re-translation;
+// see `keep_client_doc_block_contents`.
 fn compare_html(
     // A string containing HTML that's been normalized by html5ever.
     normalized_html: &str,
@@ -1794,6 +1809,10 @@ fn compare_html(
     if let Ok(raw_html) = transform_html(raw_html, compare_html_walker)
         && let Ok(raw_html) = minify(&raw_html)
     {
+        // Remove markers first: one between `<p>` and `<iframe` would hide the
+        // fix-up below.
+        let normalized_html = LINE_MARKER.replace_all(normalized_html, "");
+        let raw_html = LINE_MARKER.replace_all(&raw_html, "");
         // pulldown-cmark puts a newline after a `<br>`, which `minify` doesn't
         // remove but TinyMCE does.
         let normalized_html = normalized_html.replace("<br> ", "<br>");
@@ -1808,6 +1827,29 @@ fn compare_html(
         normalized_html == raw_html
     } else {
         false
+    }
+}
+
+/// Keep the Client's contents for each doc block of a re-translation which
+/// `compare_html` finds equal to the Client's: it differs only in line markers
+/// or in TinyMCE's normalization. Sending such a doc block would mark TinyMCE
+/// dirty, so the Client sends back an edit with no changes, and would move the
+/// caret, which the Client restores by child index: a new marker before the
+/// caret shifts that index. Doc blocks are paired by index, so after an
+/// inserted or deleted doc block the later ones are sent as translated.
+/// <fragment id="cc-fHkfDh9IcD"></fragment>
+fn keep_client_doc_block_contents(
+    // The re-translation's doc blocks, updated in place.
+    translated: &mut CodeMirrorDocBlockVec,
+    // The Client's doc blocks.
+    client: &CodeMirrorDocBlockVec,
+) {
+    for (translated, client) in translated.iter_mut().zip(client) {
+        if translated.contents != client.contents
+            && compare_html(&translated.contents, &client.contents)
+        {
+            translated.contents.clone_from(&client.contents);
+        }
     }
 }
 
@@ -1856,7 +1898,7 @@ mod tests {
     use crate::{
         capture::{CaptureContext, CaptureEventType, CaptureEventWire, capture_control_only},
         processing::{CodeMirrorDiffable, CodeMirrorDocBlock, source_to_codechat_for_web},
-        translation::doc_blocks_compare,
+        translation::{doc_blocks_compare, keep_client_doc_block_contents},
     };
 
     /// Minimal test helper for feeding lifecycle/control messages into the
@@ -2016,7 +2058,7 @@ mod tests {
         };
         let ide = vec![code_mirror.doc_blocks[1].clone()];
         let client = vec![CodeMirrorDocBlock {
-            contents: r##"<p>See <xref contenteditable="false" data-content="" ref="t"><a href="#t" data-mce-href="#t">The <span class="math math-inline mceNonEditable" contenteditable="false">\(x^2\)</span> value</a></xref> and <xref data-content="&amp;lt;em&amp;gt;y&amp;lt;/em&amp;gt; &amp;lt;span class=&amp;quot;math math-inline&amp;quot;&amp;gt;z&amp;lt;/span&amp;gt;" contenteditable="false" ref="t"><a href="#t" data-mce-href="#t"><em>y</em> <span class="math math-inline mceNonEditable" contenteditable="false">\(z\)</span></a></xref>.<fragment contenteditable="false" id="f">See <a href="#t" data-mce-href="#t">The <span class="math math-inline mceNonEditable" contenteditable="false">\(x^2\)</span> value</a></fragment></p>"##.to_string(),
+            contents: r##"<p><l-n>3</l-n>See <xref contenteditable="false" data-content="" ref="t"><a href="#t" data-mce-href="#t">The <span class="math math-inline mceNonEditable" contenteditable="false">\(x^2\)</span> value</a></xref> and <xref data-content="&amp;lt;em&amp;gt;y&amp;lt;/em&amp;gt; &amp;lt;span class=&amp;quot;math math-inline&amp;quot;&amp;gt;z&amp;lt;/span&amp;gt;" contenteditable="false" ref="t"><a href="#t" data-mce-href="#t"><em>y</em> <span class="math math-inline mceNonEditable" contenteditable="false">\(z\)</span></a></xref>.<fragment contenteditable="false" id="f">See <a href="#t" data-mce-href="#t">The <span class="math math-inline mceNonEditable" contenteditable="false">\(x^2\)</span> value</a></fragment></p>"##.to_string(),
             ..ide[0].clone()
         }];
         assert!(doc_blocks_compare(&ide, &client), "{}", ide[0].contents);
@@ -2046,5 +2088,66 @@ mod tests {
             ..ide[0].clone()
         }];
         assert!(doc_blocks_compare(&ide, &client), "{}", ide[0].contents);
+    }
+
+    // Verify that doc blocks which differ only in their line markers compare
+    // equal, as after a Client edit which moved lines, while a change to the
+    // text still counts.
+    #[test]
+    fn test_compare_line_markers() {
+        let ide = vec![CodeMirrorDocBlock {
+            from: 0,
+            to: 2,
+            indent: String::new(),
+            delimiter: "//".to_string(),
+            contents: "<p><l-n>3</l-n>One <l-n>4</l-n>two".to_string(),
+        }];
+        let client = vec![CodeMirrorDocBlock {
+            contents: "<p><l-n>2</l-n>One\n<l-n>3</l-n>two</p>".to_string(),
+            ..ide[0].clone()
+        }];
+        assert!(doc_blocks_compare(&ide, &client));
+        let client = vec![CodeMirrorDocBlock {
+            contents: "<p><l-n>3</l-n>One <l-n>4</l-n>three</p>".to_string(),
+            ..ide[0].clone()
+        }];
+        assert!(!doc_blocks_compare(&ide, &client));
+        // TinyMCE wraps an `<iframe>` in a paragraph, here after a marker.
+        let ide = vec![CodeMirrorDocBlock {
+            contents: "<p><l-n>1</l-n>Prev</p><iframe src=x></iframe>".to_string(),
+            ..ide[0].clone()
+        }];
+        let client = vec![CodeMirrorDocBlock {
+            contents: "<p><l-n>1</l-n>Prev</p><p><l-n>3</l-n><iframe src=\"x\"></iframe></p>"
+                .to_string(),
+            ..ide[0].clone()
+        }];
+        assert!(doc_blocks_compare(&ide, &client));
+    }
+
+    // Verify that a re-translation keeps the Client's doc block when the two
+    // differ only in line markers, and sends the translation otherwise.
+    #[test]
+    fn test_keep_client_doc_block_contents() {
+        let doc_block = |contents: &str| CodeMirrorDocBlock {
+            from: 0,
+            to: 2,
+            indent: String::new(),
+            delimiter: "#".to_string(),
+            contents: contents.to_string(),
+        };
+        let client = vec![
+            doc_block("<p><l-n>1</l-n>One two</p>"),
+            doc_block("<p><l-n>4</l-n>three</p>"),
+        ];
+        let mut translated = vec![
+            doc_block("<p><l-n>1</l-n>One <l-n>2</l-n>two"),
+            doc_block("<p><l-n>5</l-n>four"),
+        ];
+        keep_client_doc_block_contents(&mut translated, &client);
+        assert_eq!(
+            translated,
+            [client[0].clone(), doc_block("<p><l-n>5</l-n>four")]
+        );
     }
 }

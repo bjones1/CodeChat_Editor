@@ -69,7 +69,7 @@ use markup5ever_rcdom::{Node, NodeData, RcDom, SerializableHandle};
 use minify_html;
 use path_slash::PathBufExt as _;
 use phf::phf_map;
-use pulldown_cmark::{Options, Parser, html};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, html};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -1021,7 +1021,7 @@ pub fn source_to_codechat_for_web(
             // Document-only files are easy: just encode the contents. Fragments
             // aren't supported in Markdown documents; `hydrate_html` reports
             // them as errors.
-            let dry_html = markdown_to_html(file_contents);
+            let dry_html = markdown_to_html(file_contents, &[(0..file_contents.len(), 1)]);
             let html = hydrate_html(&dry_html, file_path, &cache)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             let html = minify(&html)?;
@@ -1051,32 +1051,32 @@ pub fn source_to_codechat_for_web(
             // block, then `[1]: http:/foo.org` in another doc block requires
             // both to be in the same Markdown document to translate correctly.
             //
-            // Walk through the code/doc blocks, ...
-            let doc_contents = code_doc_block_arr
-                .iter()
-                .enumerate()
-                // ...selecting only the doc block contents...
-                .filter_map(|(index, cdb)| {
-                    if let CodeDocBlock::DocBlock(db) = cdb {
-                        Some((index, db.contents.as_str()))
-                    } else {
-                        None
-                    }
-                })
-                // Precede each doc block with the separator string; the
-                // separator contains the index of this doc block in the vec of
-                // code/doc blocks. The separator appears before *every* doc
-                // block (including the first), so the DOM walk always knows the
-                // current doc block index and empty doc blocks stay aligned
-                // with their separators.
-                .fold(String::new(), |mut acc: String, x: (usize, &str)| {
-                    acc.push_str(&DOC_BLOCK_SEPARATOR_STRING.replace("{}", &x.0.to_string()));
-                    acc.push_str(x.1);
-                    acc
-                });
+            // Precede each doc block's contents with the separator string; the
+            // separator contains the index of this doc block in the vec of
+            // code/doc blocks. The separator appears before *every* doc block
+            // (including the first), so the DOM walk always knows the current
+            // doc block index and empty doc blocks stay aligned with their
+            // separators. Record where each doc block's contents lie in the
+            // result and the file line they start on, for the line markers; a
+            // block starts after every line of the blocks before it, counted
+            // as `render_fragment_content` counts them.
+            // <fragment id="cc-LVzecWlvge"></fragment>
+            let mut doc_contents = String::new();
+            let mut file_ranges = Vec::new();
+            let mut line = 1;
+            for (index, code_doc_block) in code_doc_block_arr.iter().enumerate() {
+                if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
+                    doc_contents
+                        .push_str(&DOC_BLOCK_SEPARATOR_STRING.replace("{}", &index.to_string()));
+                    let start = doc_contents.len();
+                    doc_contents.push_str(&doc_block.contents);
+                    file_ranges.push((start..doc_contents.len(), line));
+                }
+                line += code_doc_block_lines(code_doc_block);
+            }
 
             // Convert the Markdown to HTML.
-            let html = markdown_to_html(&doc_contents);
+            let html = markdown_to_html(&doc_contents, &file_ranges);
 
             // Break it back into doc blocks:
             //
@@ -1194,8 +1194,9 @@ static MINIFY_OPTIONS: LazyLock<minify_html::Cfg> = LazyLock::new(|| {
 static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
     let mut b = Builder::default();
     // Add custom tags produced during hydration, plus `input` (task list
-    // checkboxes produced by pulldown-cmark) and `iframe` (embedded media
-    // inserted via TinyMCE), neither of which Ammonia allows by default.
+    // checkboxes produced by pulldown-cmark), `iframe` (embedded media
+    // inserted via TinyMCE) and `l-n` (line markers produced by
+    // `markdown_to_html`), none of which Ammonia allows by default.
     b.add_tags(&[
         "wc-mermaid",
         "graphviz-graph",
@@ -1203,6 +1204,7 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
         "fragment",
         "input",
         "iframe",
+        "l-n",
     ])
     // Allow any element to be assigned an ID and to be a gather element.
     .add_generic_attributes(&["id", "data-gather"])
@@ -1284,8 +1286,10 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
 // are needed by `<ruby>`; Ammonia can't limit them to that parent, so a stray
 // one remains. Most disallowed tags are stripped but their content is kept,
 // which unwraps a nested `<xref>` to its own optional content. A `<fragment>`,
-// `<script>`, or `<style>` is removed along with its content; so is `<svg>` or
-// `<math>`, which Ammonia drops entirely since it's not in the HTML namespace.
+// line marker (`<l-n>`), `<script>`, or `<style>` is removed along with its
+// content; so is `<svg>` or `<math>`, which Ammonia drops entirely since it's
+// not in the HTML namespace. Removing markers keeps a heading's line number out
+// of link text.
 // `id` and `data-gather` attributes are stripped because they aren't in the
 // allowlist, so this HTML never defines a target or gather element, nor
 // duplicates an id when rendered in another file. `contenteditable` isn't in
@@ -1300,7 +1304,7 @@ static CLEAN_LINK_CONTENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
         "ins", "kbd", "mark", "q", "rp", "rt", "ruby", "s", "samp", "small", "span", "strong",
         "sub", "sup", "time", "u", "var", "wbr",
     ]))
-    .add_clean_content_tags(&["fragment"])
+    .add_clean_content_tags(&["fragment", "l-n"])
     // Keep the math which `hydrate_link_content` hydrates after cleaning.
     .add_allowed_classes("span", &["math", "math-inline", "math-display"])
     .link_rel(None);
@@ -1312,18 +1316,19 @@ static CLEAN_LINK_CONTENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
 // <xref ref="cc-2dkkF9YJnL"></xref>: like `AMMONIA_OPTIONS`, but `id` and
 // `data-gather` attributes are stripped (they aren't in any allowlist) to
 // prevent duplicate ids when the content is rendered in a gather list, and
-// `<fragment>` elements are removed *along with their contents* -- backlink
-// hydration is excluded from fragment content (see layer 4 under
-// <xref ref="cc-P-g5o100jN"></xref>), which is what keeps a gather element and
-// the fragments it lists from outdating each other forever. Each `<xref>` keeps
-// its `data-content`, from which a gather element re-hydrates its link; see
-// `hydrate_xrefs_within`. Only a `contenteditable` of `false` is kept: a
-// hand-written `true` could make part of a non-editable gather list editable,
-// and dehydration discards edits made there.
+// `<fragment>` elements and line markers are removed *along with their
+// contents* (a marker's number belongs to where the fragment was written, not
+// to the gather list) -- backlink hydration is excluded from fragment content
+// (see layer 4 under <xref ref="cc-P-g5o100jN"></xref>), which is what keeps a
+// gather element and the fragments it lists from outdating each other forever.
+// Each `<xref>` keeps its `data-content`, from which a gather element
+// re-hydrates its link; see `hydrate_xrefs_within`. Only a `contenteditable` of
+// `false` is kept: a hand-written `true` could make part of a non-editable
+// gather list editable, and dehydration discards edits made there.
 static CLEAN_FRAGMENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
     let mut b = Builder::default();
     b.add_tags(&["wc-mermaid", "graphviz-graph", "xref", "input", "iframe"])
-        .add_clean_content_tags(&["fragment"])
+        .add_clean_content_tags(&["fragment", "l-n"])
         .add_allowed_classes(
             "span",
             &[
@@ -1441,16 +1446,157 @@ pub fn source_to_codechat_for_web_string(
     ))
 }
 
+/// Elements which can't hold a marker: html5ever doesn't parse their text as
+/// HTML (raw text, escapable raw text, and `iframe`), a diagram reads their
+/// text as its source, or (`xref`) `hydrate_source_xref` copies their content
+/// into an attribute which a save writes back unchanged. A marker inside one
+/// would become text, or be saved.
+/// <fragment id="cc-Ux5oCqGB58"></fragment>
+const UNMARKED_ELEMENTS: [&str; 12] = [
+    "iframe",
+    "noembed",
+    "noframes",
+    "noscript",
+    "script",
+    "style",
+    "textarea",
+    "title",
+    "xmp",
+    "wc-mermaid",
+    "graphviz-graph",
+    "xref",
+];
+
 /// Convert markdown to HTML. (This assumes the Markdown defined in the
-/// CommonMark spec.)
-fn markdown_to_html(markdown: &str) -> String {
+/// CommonMark spec.) Insert a line marker such as `<l-n>24</l-n>` before the
+/// first inline event which starts on each line taken from the file, as
+/// [line-number-spec.md](../../line-number-spec.md) specifies. Inline events
+/// only occur inside a paragraph, heading, list item, table cell or definition,
+/// so a marker never lands between table tags, where html5ever would move it.
+/// No marker goes inside an element which inline HTML or an HTML block opens
+/// and which can't hold one; see `UNMARKED_ELEMENTS`.
+/// <fragment id="cc-ehJC2b6tRN"></fragment>
+fn markdown_to_html(
+    // The Markdown to convert.
+    markdown: &str,
+    // The byte ranges of `markdown` taken from the file, in order, each with
+    // the file line on which it starts. Text outside these ranges gets no
+    // marker, so an empty slice gives HTML without markers.
+    file_ranges: &[(Range<usize>, usize)],
+    // The resulting HTML.
+) -> String {
     let mut options = Options::all();
     // htmd (which converts HTML back to Markdown) doesn't support smart
     // punctuation.
     options.remove(Options::ENABLE_SMART_PUNCTUATION);
-    let parser = Parser::new_ext(markdown, options);
+    // The byte offset at which each line of `markdown` starts.
+    let line_starts: Vec<usize> = std::iter::once(0)
+        .chain(markdown.match_indices('\n').map(|(index, _)| index + 1))
+        .collect();
+    let line_index = |offset: usize| line_starts.partition_point(|&start| start <= offset) - 1;
+    // The file line containing `offset`, if it lies in one of `file_ranges`.
+    let file_line = |offset: usize| {
+        let (range, first_line) =
+            file_ranges.get(file_ranges.partition_point(|(range, _)| range.end <= offset))?;
+        range
+            .contains(&offset)
+            .then(|| first_line + line_index(offset) - line_index(range.start))
+    };
+
+    let mut events = Vec::new();
+    let mut last_marked_line = 0;
+    // The nesting depth inside elements where a marker isn't safe: the writer
+    // turns an image's text into its `alt` attribute, outputs code and raw HTML
+    // blocks verbatim, and drops a metadata block's text but not inline HTML.
+    let mut opaque_depth = 0;
+    // The element from `UNMARKED_ELEMENTS` which inline HTML or an HTML block
+    // opened and hasn't yet closed. html5ever ends it only at its own end tag
+    // or at the end of the doc block: each is parsed on its own (see
+    // `doc_blocks_to_dom`). A blank line ends an HTML block but not the
+    // element, so the Markdown after it is still inside.
+    let mut unmarked_element: Option<String> = None;
+    for (event, range) in Parser::new_ext(markdown, options).into_offset_iter() {
+        let is_inline = matches!(
+            event,
+            Event::Text(_)
+                | Event::Code(_)
+                | Event::InlineMath(_)
+                | Event::DisplayMath(_)
+                | Event::InlineHtml(_)
+                | Event::FootnoteReference(_)
+                | Event::TaskListMarker(_)
+                | Event::Start(
+                    Tag::Emphasis
+                        | Tag::Strong
+                        | Tag::Strikethrough
+                        | Tag::Superscript
+                        | Tag::Subscript
+                        | Tag::Link { .. }
+                        | Tag::Image { .. }
+                )
+        );
+        let line = file_line(range.start);
+        // Text outside the file's ranges is a doc block separator.
+        if line.is_none() {
+            unmarked_element = None;
+        }
+        if opaque_depth == 0
+            && unmarked_element.is_none()
+            && is_inline
+            && let Some(line) = line
+            && line > last_marked_line
+        {
+            last_marked_line = line;
+            events.push(Event::InlineHtml(format!("<l-n>{line}</l-n>").into()));
+        }
+        match &event {
+            Event::Start(
+                Tag::Image { .. } | Tag::CodeBlock(_) | Tag::HtmlBlock | Tag::MetadataBlock(_),
+            ) => opaque_depth += 1,
+            Event::End(
+                TagEnd::Image | TagEnd::CodeBlock | TagEnd::HtmlBlock | TagEnd::MetadataBlock(_),
+            ) => opaque_depth -= 1,
+            // pulldown-cmark gives each inline tag its own event. In an image,
+            // the tag is `alt` text.
+            Event::InlineHtml(tag) if opaque_depth == 0 => {
+                let (is_end_tag, name) = match tag.strip_prefix("</") {
+                    Some(rest) => (true, rest),
+                    None => (false, tag.strip_prefix('<').unwrap_or_default()),
+                };
+                let name: String = name
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+                    .collect::<String>()
+                    .to_ascii_lowercase();
+                if is_end_tag {
+                    if unmarked_element.as_ref() == Some(&name) {
+                        unmarked_element = None;
+                    }
+                } else if unmarked_element.is_none() && UNMARKED_ELEMENTS.contains(&name.as_str()) {
+                    unmarked_element = Some(name);
+                }
+            }
+            Event::Html(html) => {
+                let html = html.to_ascii_lowercase();
+                let closes = |name: &str| html.contains(&format!("</{name}"));
+                if let Some(name) = &unmarked_element {
+                    if closes(name) {
+                        unmarked_element = None;
+                    }
+                } else {
+                    unmarked_element = UNMARKED_ELEMENTS
+                        .iter()
+                        .find(|name| html.contains(&format!("<{name}")) && !closes(name))
+                        .map(ToString::to_string);
+                }
+            }
+            _ => {}
+        }
+        events.push(event);
+    }
+
     let mut html_output = String::new();
-    html::push_html(&mut html_output, parser);
+    html::push_html(&mut html_output, events.into_iter());
     html_output
 }
 
@@ -2241,7 +2387,8 @@ fn render_fragment_content(
 }
 
 /// The number of source lines a code/doc block occupies, used to compute the
-/// line numbers a fragment's code blocks display.
+/// line numbers a fragment's code blocks display and the numbers in line
+/// markers.
 fn code_doc_block_lines(
     // The block to measure.
     code_doc_block: &CodeDocBlock,
@@ -3065,10 +3212,10 @@ pub fn remove_tinymce_data(
 
 /// Walk a node, dehydrating it by removing TinyMCE temporary attributes,
 /// changing math to pulldown-cmark's output, changing graphviz/Mermaid to
-/// fenced code blocks, and removing all cache-hydrated content (`<fragment>`
-/// contents, gather lists, the classes/attributes hydration adds, and each
-/// `<xref>`'s link, in place of which its optional content is restored), so
-/// that none of it is written back to source.
+/// fenced code blocks, and removing line markers and all cache-hydrated content
+/// (`<fragment>` contents, gather lists, the classes/attributes hydration adds,
+/// and each `<xref>`'s link, in place of which its optional content is
+/// restored), so that none of it is written back to source.
 #[allow(clippy::too_many_lines)]
 fn dehydrating_walk_node(
     // The node whose descendants are dehydrated.
@@ -3086,13 +3233,13 @@ fn dehydrating_walk_node(
             continue;
         }
 
-        // Remove cache-hydration artifacts.
+        // Remove cache-hydration artifacts and line markers.
         {
             let child = node.children.borrow()[index].clone();
-            // A hydrated gather list is entirely generated content; remove the
-            // node. The slot now holds the next child, so leave `index`
-            // unchanged.
-            if is_gather_items_div(&child) {
+            // A hydrated gather list is entirely generated content, as is a
+            // line marker (`l-n` is reserved for these); remove the node. The
+            // slot now holds the next child, so leave `index` unchanged.
+            if is_gather_items_div(&child) || get_node_tag_name(&child) == Some("l-n") {
                 node.children.borrow_mut().remove(index);
                 continue;
             }

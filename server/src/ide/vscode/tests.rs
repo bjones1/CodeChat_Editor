@@ -561,7 +561,7 @@ async fn test_vscode_ide_websocket8() {
                             to: 1,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: "<p>testing".to_string()
+                            contents: "<p><l-n>1</l-n>testing".to_string()
                         }],
                     }),
                     version: 0.0,
@@ -694,7 +694,7 @@ async fn test_vscode_ide_websocket7() {
                             to: 1,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: "<p>more".to_string()
+                            contents: "<p><l-n>1</l-n>more".to_string()
                         }]
                     }),
                     version: 0.0,
@@ -774,7 +774,7 @@ async fn test_vscode_ide_websocket7() {
                             to: 7,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: "<p>most".to_string(),
+                            contents: "<p><l-n>3</l-n>most".to_string(),
                         },),],
                         version: 0.0,
                     }),
@@ -1010,7 +1010,7 @@ async fn test_vscode_ide_websocket13() {
                             to: 7,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: "<p>most".to_string(),
+                            contents: "<p><l-n>3</l-n>most".to_string(),
                         })],
                         version: 0.0,
                     }),
@@ -1087,7 +1087,7 @@ async fn test_vscode_ide_websocket13() {
                             to: 1,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: "<p>newest".to_string(),
+                            contents: "<p><l-n>1</l-n>newest".to_string(),
                         }],
                     }),
                     version: 5.0,
@@ -1309,7 +1309,7 @@ async fn test_vscode_ide_websocket4() {
                             to: 1,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: "<p>test.py".to_string()
+                            contents: "<p><l-n>1</l-n>test.py".to_string()
                         }],
                     }),
                     version: cast!(&msg.message, EditorMessageContents::Update)
@@ -1863,7 +1863,7 @@ async fn test_vscode_ide_websocket10() {
                             to: 1,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: r#"<p>See <xref contenteditable=false data-content ref=foo><span class=cc-error>id "foo" not found</span></xref>."#.to_string(),
+                            contents: r#"<p><l-n>1</l-n>See <xref contenteditable=false data-content ref=foo><span class=cc-error>id "foo" not found</span></xref>."#.to_string(),
                         }],
                     }),
                     version: 0.0,
@@ -1926,8 +1926,8 @@ async fn test_vscode_ide_websocket10() {
                                 delimiter: None,
                                 contents: vec![StringDiff {
                                     from: 0,
-                                    to: Some(110),
-                                    insert: "<p>See <xref contenteditable=false data-content ref=foo><a href=toc.md#foo>Foo</a></xref>.".to_string(),
+                                    to: Some(122),
+                                    insert: "<p><l-n>1</l-n>See <xref contenteditable=false data-content ref=foo><a href=toc.md#foo>Foo</a></xref>.".to_string(),
                                 }],
                             }
                         )],
@@ -2168,7 +2168,7 @@ async fn test_vscode_ide_websocket11() {
         EditorMessage {
             id: INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
             message: EditorMessageContents::UpdateToc(
-                "<ul><li><xref contenteditable=false data-content ref=foo><a href=test.py#foo>Bar</a></xref></ul>"
+                "<ul><li><l-n>1</l-n><xref contenteditable=false data-content ref=foo><a href=test.py#foo>Bar</a></xref></ul>"
                     .to_string()
             ),
         }
@@ -2211,7 +2211,7 @@ async fn test_vscode_ide_websocket11() {
         EditorMessage {
             id: INITIAL_MESSAGE_ID + 6.0 * MESSAGE_ID_INCREMENT,
             message: EditorMessageContents::UpdateToc(
-                "<ul><li><xref contenteditable=false data-content ref=foo><a href=test.py#foo>Bar</a></xref><li>More</ul>"
+                "<ul><li><l-n>1</l-n><xref contenteditable=false data-content ref=foo><a href=test.py#foo>Bar</a></xref><li><l-n>2</l-n>More</ul>"
                     .to_string()
             ),
         }
@@ -2327,7 +2327,7 @@ async fn test_vscode_ide_websocket12() {
         INITIAL_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT,
     )
     .await;
-    assert_contains!(toc_page, "<h1>Contents</h1>");
+    assert_contains!(toc_page, "<h1><l-n>1</l-n>Contents</h1>");
 
     // Edit the TOC in the IDE. The Client receives the edit, then the sidebar's
     // new rendering of it.
@@ -2347,7 +2347,9 @@ async fn test_vscode_ide_websocket12() {
         read_message(&mut ws_client).await,
         EditorMessage {
             id: INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
-            message: EditorMessageContents::UpdateToc("<h1>Contents</h1><p>More".to_string()),
+            message: EditorMessageContents::UpdateToc(
+                "<h1><l-n>1</l-n>Contents</h1><p><l-n>3</l-n>More".to_string()
+            ),
         }
     );
     acknowledge(
@@ -2407,7 +2409,7 @@ async fn test_vscode_ide_websocket12() {
         EditorMessage {
             id: INITIAL_MESSAGE_ID + 5.0 * MESSAGE_ID_INCREMENT,
             message: EditorMessageContents::UpdateToc(
-                "<h1>Contents</h1><p>More and more".to_string()
+                "<h1><l-n>1</l-n>Contents</h1><p><l-n>4</l-n>More and more".to_string()
             ),
         }
     );

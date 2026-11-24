@@ -1254,6 +1254,10 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             // TinyMCE's own init happens to put it (its start).
                             // Anchoring on a text node instead keeps the
                             // walk -- and thus the edge placement -- intact.
+                            // The first child of a block is often a hidden
+                            // line marker (`<l-n>`); step over it, so that the
+                            // caret isn't put in hidden text.
+                            // <fragment id="cc-fI5iKBnJat"></fragment>
                             let edgeNode: Node = contents;
                             while (
                                 atEnd ? edgeNode.lastChild : edgeNode.firstChild
@@ -1261,6 +1265,12 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                                 edgeNode = atEnd
                                     ? edgeNode.lastChild!
                                     : edgeNode.firstChild!;
+                                if (
+                                    edgeNode.nodeName === "L-N" &&
+                                    edgeNode.nextSibling
+                                ) {
+                                    edgeNode = edgeNode.nextSibling;
+                                }
                             }
                             if (edgeNode.nodeType === Node.TEXT_NODE) {
                                 const offset = atEnd

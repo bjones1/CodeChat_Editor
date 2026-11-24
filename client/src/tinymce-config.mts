@@ -146,11 +146,12 @@ export const init = async (
             quickbars_selection_toolbar:
                 "bold italic underline codeformat | quicklink h2 h3",
 
-            // Needed to allow custom elements.
+            // Needed to allow custom elements. Without `l-n`, TinyMCE would
+            // drop each line marker but keep its number as visible text.
             extended_valid_elements:
-                "graphviz-graph[scale],wc-mermaid,xref[contenteditable|ref],fragment[contenteditable|following|id]",
+                "graphviz-graph[scale],wc-mermaid,xref[contenteditable|ref],fragment[contenteditable|following|id],l-n",
             // Per the [docs](https://www.tiny.cloud/docs/tinymce/latest/content-filtering/#custom_elements), `~` marks tags as an inline element, not a block element.
-            custom_elements: "graphviz-graph,wc-mermaid,~xref,~fragment",
+            custom_elements: "graphviz-graph,wc-mermaid,~xref,~fragment,~l-n",
 
             // Setting the
             // [context menu](https://www.tiny.cloud/docs/tinymce/latest/contextmenu/#contextmenu)
@@ -181,12 +182,86 @@ export const init = async (
         });
         takeLinkGestures(editor);
         addLinkMenu(editor);
+        handleLineMarkers(editor);
     };
 
     // Use these combined options to
     // [init](https://www.tiny.cloud/docs/tinymce/latest/apis/tinymce.root/#init)
     // TinyMCE.
     return await tinymce.init(combinedOptions);
+};
+
+// Line markers
+// ------------
+//
+// The Server puts a hidden marker before the content of each Markdown line;
+// see [line-number-spec.md](../../line-number-spec.md).
+//
+// TinyMCE counts the number inside a marker as content, so a block which holds
+// only markers doesn't get the `<br>` TinyMCE puts in an empty block. That
+// block has no height, so the caret can't enter it, and saving drops it, since
+// the Server removes the markers. Such a block appears when Enter splits a
+// paragraph just after its marker, and when TinyMCE parses contents, as in
+// `setContent`: its parser removes the `<br>` which ends a block it doesn't
+// consider empty. Add the `<br>` in both cases.
+//
+// A copy or cut puts the selected HTML on the clipboard. Leave the markers out
+// of it: their numbers don't fit where the text is pasted, and an editor
+// without the Client's CSS shows them.
+// <fragment id="cc-AZYIpZE6s0"></fragment>
+const handleLineMarkers = (
+    // The editor whose markers are handled.
+    editor: Editor,
+) => {
+    editor.on("NewBlock", ({ newBlock }) => {
+        // When Enter splits a block, the first half stays in place and the
+        // second half becomes `newBlock`.
+        const block = newBlock.previousElementSibling;
+        if (block?.querySelector("l-n") && !block.querySelector("br")) {
+            const withoutMarkers = block.cloneNode(true) as Element;
+            withoutMarkers
+                .querySelectorAll("l-n")
+                .forEach((marker) => marker.remove());
+            if (editor.dom.isEmpty(withoutMarkers)) {
+                editor.dom.add(block, "br", { "data-mce-bogus": "1" });
+            }
+        }
+    });
+    // The parser exists once the editor starts to initialize.
+    editor.on("PreInit", () => {
+        const blockElements = editor.schema.getBlockElements();
+        editor.parser.addNodeFilter("l-n", (markers) => {
+            for (const marker of markers) {
+                const block = marker.parent;
+                if (!block || !(block.name in blockElements)) {
+                    continue;
+                }
+                // TinyMCE's own filter may run before or after this one, so
+                // the block may still hold its `<br>`.
+                const children = block.children();
+                const brs = children.filter((child) => child.name === "br");
+                if (
+                    brs.length <= 1 &&
+                    children.every(
+                        (child) => child.name === "l-n" || child.name === "br",
+                    )
+                ) {
+                    brs.forEach((br) => br.remove());
+                    block.append(
+                        tinymce.html.Node.create("br", {
+                            "data-mce-bogus": "1",
+                        }),
+                    );
+                }
+            }
+        });
+    });
+    // TinyMCE builds the clipboard's HTML from the selection's contents.
+    editor.on("GetContent", (event) => {
+        if (event.selection) {
+            event.content = event.content.replace(/<l-n>\d+<\/l-n>/g, "");
+        }
+    });
 };
 
 // Following links
