@@ -287,7 +287,7 @@ GitHub userid: diasjakupovkbtu
 #### Contributions
 
 Ran spec review rounds 3-8, implemented the spec in the Server and Client with
-its tests, and ran implementation review rounds 1-6, fixing each accepted
+its tests, and ran implementation review rounds 1-7, fixing each accepted
 finding, with a test where one applies.
 
 #### Specification review rounds
@@ -309,16 +309,17 @@ Round 8 (Claude Opus 5.5); prompt and output are in the draft section above.
 | 4     | 2 minor (2 accepted) | Gemini 4 Neon (High), verdict "yes": one function, `track_unmarked_element`, reads tags from left to right for inline HTML and HTML blocks alike, fixing a nested `<xref>` in an HTML block and a `<script>` whose text names `<iframe` |
 | 5     | 3 minor + 1 trivial (1 accepted) | Gemini 4 Neon (High), verdict "yes", remaining findings "effectively" trivial: a tag name ends only at whitespace, `/` or `>`. Two findings did not reproduce |
 | 6     | 2 minor + 2 trivial (1 + 1 accepted) | Claude Opus 5.5 as a fresh reviewer, verdict "yes": when Enter splits a paragraph just after its marker, the marker moves to the second half, so the empty half saves as an empty paragraph and Enter in an empty list item leaves the list; a TinyMCE parser filter is deleted. Not acted on: an unclosed `<!--`, which doesn't round-trip without markers either |
+| 7     | 1 major + 2 minor (3 accepted) | Claude Opus 5.5 as a fresh reviewer, verdict "yes", remaining findings "not trivial": Enter before a later line of a paragraph left that line's marker behind, so the Server sent a re-translation and the caret moved; the `NewBlock` handler moves every marker with nothing after it, `compare_html` removes markers before `minify`, and `restoreSelection` steps over a marker. Also fixed: a non-breaking space typed before a marker was saved into the source |
 
 #### Last implementation review
 
 LLM: Claude Opus 5.5, run as a fresh reviewer with no part in writing the code,
-on this branch with the round 3 to round 5 fixes, against `main` `061a0a1`.
-Rounds 2-5 used Gemini 4 Neon. It could read everything, run `cargo test --lib`
-and probes in a copy of the repo, and test the Client's TinyMCE handler in a
-standalone TinyMCE page. Paths in the prompt are shortened: `{repo}` is the
-CodeChat Editor clone, `{book}` the course book repo, `{scratch}` a scratch
-folder.
+on this branch at `8a87aae` (rounds 1-6), against `main` `061a0a1`. Same setup
+and prompt as round 6, with the round 6 decisions added. It could read
+everything, run `cargo test --lib` and probes in a copy of the repo, and test
+the Client's TinyMCE handler in a standalone TinyMCE page. Paths in the prompt
+are shortened: `{repo}` is the CodeChat Editor clone, `{book}` the course
+book repo, `{scratch}` a scratch folder.
 
 <details>
 <summary>Prompt</summary>
@@ -350,14 +351,14 @@ On an earlier project the instructor rejected a spec as "far too verbose" and as
 ## The change
 
 - Spec: `line-number-spec.md` at the repo root.
-- Implementation: committed on the current branch, plus the round 3 to round 5 fixes, uncommitted in the working tree. The full diff against upstream `main` (`061a0a1`), without `submission.md`, is in `{scratch}/implementation.diff` (same content as `git diff 061a0a1`).
+- Implementation: committed on the current branch (`8a87aae`); the working tree is clean. The full diff against upstream `main` (`061a0a1`), without `submission.md`, is in `{scratch}/implementation.diff` (same content as `git diff 061a0a1 -- . ':!submission.md'`).
 - Main code: `server/src/processing.rs` (`markdown_to_html`, `UNMARKED_ELEMENTS`, the clean/dehydrate code, `compare_html`), `server/src/translation.rs` (`keep_client_doc_block_contents`), `client/src/tinymce-config.mts` (`handleLineMarkers`), `client/src/CodeMirror-integration.mts`, `client/src/css/CodeChatEditor.css`, and tests in `server/src/processing/tests.rs`, `server/src/ide/vscode/tests.rs`, `server/tests/overall/`.
 - House rules for code and comments: `AGENTS.md`.
 - Known and not to be reported: 10 browser tests time out on `main` too, because `/static/mathjax/tex-chtml.js` is missing from the local build.
 
 ## Earlier review rounds (already decided)
 
-This is the sixth implementation review; rounds 2-5 used a different LLM. Round 5 changed `track_unmarked_element` so that a tag name ends only at whitespace, `/` or `>` (before, `<title_x>` on a line of an HTML block was read as `<title>` and hid every later marker). Check that this is right, and look with fresh eyes at the whole change, not only at the tag tracking.
+This is the seventh implementation review. Rounds 2-5 used a different LLM; round 6 used another fresh reviewer. Round 6 changed the Client: when Enter splits a block just after its marker (`NewBlock` event), `handleLineMarkers` now moves the marker into the second half and gives the first half the `<br data-mce-bogus="1">` of an empty block; the `PreInit` parser node filter was deleted as no longer needed. Check that this is right (also with lists, headings, several markers in one block, and undo), and look with fresh eyes at the whole change, not only at the Client.
 
 These points were checked and decided; report them again only with a new, concrete repro that the earlier decision did not cover:
 
@@ -367,7 +368,7 @@ These points were checked and decided; report them again only with a new, concre
 - Rejected: `contains("</iframe")`-style checks have no tag-name boundary (`</iframe-x>`, a tag name inside a comment). Not worth a tag parser.
 - Not added: a multi-line `<xref>` or `<iframe>` in the round-trip test (the save rewrites them the same way with or without markers); a test for a hand-written `<l-n>`.
 - Known deviation, in the spec: a generic-lexer `/*⏎` comment puts the markers one line early.
-- Not acted on (round 3, not reproduced): the `PreInit` node filter doesn't ignore whitespace-only text nodes; the `NewBlock` handler checks only the first half of a split block.
+- Not acted on (round 3, not reproduced): the `NewBlock` handler checks only the first half of a split block.
 - Fixed in round 3, checked in round 4: a nested `<xref>` spanning two lines; an HTML block line which closes one `<iframe>` and opens another; `GetContent` strips markers from HTML only (the plain text comes from `innerText`).
 - Not acted on (round 4): an end tag such as `</xref>` or `</wc-mermaid>` inside a Markdown paragraph, after an HTML block opened the element. html5ever ignores it (`p` is a special element), so the element runs to the end of the doc block while the tracking stops at the end tag. Such input doesn't round-trip without markers either.
 - Not acted on (round 4): `markdown_to_html` builds the line table for an empty range list (only tests pass one).
@@ -375,6 +376,9 @@ These points were checked and decided; report them again only with a new, concre
 - Not reproduced (round 5): the caret walk stopping in a trailing marker when a doc block is entered from below (`// Hello⏎// <script>x</script>` gives no trailing marker; the spec covers only entering from above). A marker inside `<select>` (it stays a hidden `<l-n>` element) or `<plaintext>` (the existing unclosed-tag check refuses the doc block).
 - Not acted on (round 5): the spec's test table names test inputs and browser tests; the spec has no GPL header (the house rules ask for it in source files); an unclosed inline `<xref>` is closed by html5ever at the end of its paragraph while the tracking runs to the end of the doc block (malformed input; a marker is only missing).
 - Kept: `script` and `style` in `UNMARKED_ELEMENTS`, though Ammonia drops them with their content anyway (keeps `markdown_to_html`'s own output right).
+- Fixed in round 6: Enter just after a marker left the marker in the empty first half (it saved with no height; Enter in an empty-looking list item added an item instead of leaving the list). See above.
+- Not acted on (round 6): an unclosed `<!--` on a line of an HTML block runs to the end of the doc block and the markers inside it are saved (malformed input; it doesn't round-trip without markers either). An attribute value holding a tag name, such as `<a title="x <iframe y">`, hides later markers (same class as a tag name inside a comment; markers are only missing).
+- Not acted on (round 6): shortening the spec's test table and its list of inline events (the list is the placement rule); a test of the `keep_client_doc_block_contents` call in `send_re_translation` (two browser tests fail without it).
 
 ## What to assess
 
@@ -386,7 +390,7 @@ Rate each finding: major (wrong output a user would hit), minor (rare input or c
 
 ## Tool use
 
-You may read any file and run commands, but do not edit any file in the repo. To probe the code, copy the repo without `target/` and `node_modules/` to `{scratch}/repo` and edit only that copy. Before running cargo: `export PATH="$HOME/.cargo/bin:$HOME/.rustup/toolchains/1.98.0-aarch64-apple-darwin/bin:$PATH"; export CARGO_TARGET_DIR={scratch}/target`. Run `cargo test --lib` from `server/`; do not run the browser tests (`server/tests/overall*.rs`) or `./bt`. TinyMCE's source is in `client/node_modules`, pulldown-cmark's and html5ever's under `~/.cargo/registry/src/`.
+You may read any file and run commands, but do not edit any file in the repo. To probe the code, copy the repo without `target/` and `node_modules/` to `{scratch}/repo` and edit only that copy. Before running cargo: `export PATH="$HOME/.cargo/bin:$HOME/.rustup/toolchains/1.98.0-aarch64-apple-darwin/bin:$PATH"; export CARGO_TARGET_DIR={scratch}/target`. Run `cargo test --lib` from `server/`; do not run the browser tests (`server/tests/overall*.rs`) or `./bt`. TinyMCE's source is in `client/node_modules`, pulldown-cmark's and html5ever's under `~/.cargo/registry/src/`. To test the Client's TinyMCE handler, you may build a standalone page in `{scratch}` from `client/node_modules/tinymce` with the Client's `handleLineMarkers`, valid-element settings and CSS, and drive it with any browser tool you have. TinyMCE 8.10.1 is already copied to `{scratch}/tiny/tinymce`; put your page in `{scratch}/tiny`. Browser tools won't run scripts on a `file://` page: the preview config `tinymce-probe-7` (preview_start with that name) serves `{scratch}/tiny` at http://127.0.0.1:8766.
 
 ## Output format
 
@@ -397,134 +401,70 @@ Write the review to `{scratch}/output.md` and reply with just that path and the 
 
 </details>
 
-Output. Finding 1 reproduced in the reviewer's TinyMCE page and is fixed: the
-`NewBlock` handler moves the markers to the second half, and the `PreInit`
-parser filter is deleted. Browser test `overall_3::test_8` fails without the
-move. Finding 2 is malformed input which doesn't round-trip without markers
-either, so it is not acted on. Of the trivial findings, the stale test comment
-is fixed; the spec keeps its event list (the placement rule) and test table,
-and the helper test stays, since the spec names the two browser tests which
-fail without its call.
+Output. All three findings reproduced and are fixed. Finding 1: the `NewBlock`
+handler moves every marker with nothing after it in the first half, and
+`compare_html` removes markers before `minify`; `test_compare_line_markers`
+gains this case and fails without the `compare_html` change. Finding 2:
+`restoreSelection` steps over a marker at each level of the saved path. Finding
+3 is gone with finding 1. While checking finding 1, a non-breaking space typed
+before a marker turned out to be saved into the source; the `GetContent`
+handler now turns it into a space. The spec's test table now says what
+`test_8` checks. Not acted on: lone `\r` line endings and an inline `<pre>`
+inside a paragraph (small remarks).
 
 <details>
 <summary>Full review</summary>
 
-Checked: diff against `061a0a1`; `cargo test --lib` in a copy (164 pass, plus
-probes: 32 inputs translated and saved with and without markers); a standalone
-TinyMCE 8.10.1 page with the Client's config, CSS and `handleLineMarkers`
-(browser tests not run).
+Method: `cargo test --lib` and probe tests in a scratch copy; TinyMCE 8.10.1 with the Client's `handleLineMarkers`, valid elements and CSS, driven by real key presses in Chromium.
 
 ##### Findings
 
-###### 1. Minor -- correctness (Client) -- `client/src/tinymce-config.mts:216-259`
+###### 1. Enter before a later source line leaves its marker behind, and the re-translation that follows moves the caret
 
-The `NewBlock` handler pads the first half of the split with a `<br>` but leaves
-the marker in it, so TinyMCE still sees that block as holding content.
+- Severity: major
+- Category: correctness
+- Location: `client/src/tinymce-config.mts:215-231` (`NewBlock` handler); `server/src/translation.rs:1809-1815` (`compare_html`)
+- What is wrong: splitting a paragraph just before the first word of its 2nd or later source line leaves that line's marker at the end of the first half. `compare_html` then reports a difference, so the Server sends a re-translation that `main` does not send. Finding 2 then moves the caret.
+- Evidence:
+  - Markdown document `abc⏎def⏎`, Client HTML `<p><l-n>1</l-n>abc <l-n>2</l-n>def</p>`. Caret before `def`, Enter: `<p><l-n>1</l-n>abc <l-n>2</l-n></p><p>def</p>`. The same Enter in `<p>abc def</p>` (`main`) gives `<p>abc</p><p>def</p>`.
+  - `compare_html` removes markers after `minify`, so the space before the trailing marker survives: `<p>abc <p>def` against `<p>abc<p>def`, result false. Without markers the result is true.
+  - Then type `xy`, pause (300 ms autosave), type `Q`: the restored caret is `(L-N, 0)` in `<p><l-n>3</l-n>xydef</p>` and `Q` lands at the paragraph start, `Qxydef` instead of `xyQdef`. Steps reproduced separately, not as one run in the real Client.
+- Smallest fix: in the `NewBlock` handler, move every marker of `block` that has no visible content after it to the start of `newBlock`, then add the bogus `<br>` only if `block` is now empty. Also remove markers from `raw_html` before `transform_html`/`minify`, as spec item 7 says ("before comparing"); with that change all 167 lib tests still pass in the scratch copy.
 
-* Repro A: `<p><l-n>1</l-n>First para</p><p><l-n>3</l-n>Second</p>`, caret at the
-  start of "Second" (after the marker, where `test_8`'s click lands), Enter, then
-  `editor.save()`. That is what `CodeMirror-integration.mts:1537` writes into the
-  static div when TinyMCE moves to another doc block. Result:
-  `<p><l-n>3</l-n></p>`, height 0. The next Client update sends it, and the save
-  drops it (`# First para\n#\n# Second`). Without markers, `save()` gives
-  `<p>&nbsp;</p>`, height 18.5. So the spec's claim (line 146) that "the empty
-  paragraph keeps its height" holds only while TinyMCE edits the block.
-* Repro B: `<ul><li><l-n>3</l-n>a</li>…`, caret at the start of "a", Enter, Up,
-  Enter. A third `<li>` is added. Without markers, TinyMCE turns the empty item
-  into a `<p>` before the list.
-* Smallest fix, checked in the same page: move the markers into the second half
-  (`newBlock.prepend(...block.querySelectorAll("l-n"))`) before adding the
-  `<br>`. Both repros then match the no-marker behaviour, Enter in the empty
-  paragraph still works, and a `getContent`/`setContent` round trip keeps the
-  `<br>`. The `PreInit` node filter (lines 231-259) then has nothing left to do
-  and can be deleted. Spec bullet at line 102 shrinks to one sentence.
+###### 2. Restoring the caret after a re-translation lands on a marker
 
-###### ~~2. Minor -- correctness (Server) -- `server/src/processing.rs:1476` (`track_unmarked_element`)~~ *(not acted on)*
+- Severity: minor
+- Category: correctness / spec-code mismatch
+- Location: `client/src/CodeChatEditor.mts:564-599` (`restoreSelection`), called at `CodeChatEditor.mts:411` and `CodeMirror-integration.mts:544`; spec lines 86-91
+- What is wrong: the saved caret is a list of child indexes. A block the Client made with Enter has no marker; the re-translated block starts with one. Index 0 then names the `<l-n>` element and the offset is clamped to 0 (an element's `nodeValue` is null), so the caret moves to the block start. In a Markdown document the next cursor update maps to the block's first line, because `html_to_dom` finds no text node to put the cursor marker in. Spec item 8 says `keep_client_doc_block_contents` prevents this shift, but it keeps only doc blocks that compare equal, so the block whose difference caused the re-translation (usually the one being edited) still shifts, and Markdown documents are not covered.
+- Evidence: caret path `[1,0]`, offset 2 in `<p>xydef</p>`; after `setContent('<p><l-n>1</l-n>abc</p><p><l-n>3</l-n>xydef</p>')` and the `restoreSelection` logic the caret is `(L-N, 0)`. Server probe: `<p><l-n>1</l-n>abc<p><l-n>3</l-n>def` with path `[1,0]` gives line 1; `main`'s `<p>abc<p>def` gives line 3.
+- Smallest fix: in `restoreSelection`, after the descent, `if (selectionNode.nodeName === "L-N" && selectionNode.nextSibling) selectionNode = selectionNode.nextSibling;` (the guard already used at `CodeMirror-integration.mts:1269`). Correct the claim in spec item 8.
 
-An unclosed `<!--` on an HTML block line swallows the rest of the doc block, and
-markers inside it are saved. Repro (`foo.md`): `<div>\n<!-- x\n</div>\n\nText\n\nMore\n`.
+###### 3. Enter at the end of a block that ends in a marker
 
-* With markers, the save writes `<p><l-n>5</l-n>Text</p>\n<p><l-n>7</l-n>More</p>`
-  inside the comment.
-* Without markers, the save writes `<p>Text</p>…` there. So the input doesn't
-  round-trip in either case, but only this change puts `<l-n>` into the file.
-
-Fix: treat `<!--` with no later `-->` like an opened unmarked element, closed by
-`-->`. Or record it as malformed input, as round 4 did for a stray `</xref>`.
-
-###### ~~3. Trivial -- overengineering (spec) -- `line-number-spec.md`~~ *(not acted on)*
-
-155 lines is reasonable for the edge cases, but two parts could be shorter:
-
-* The 13-row test table repeats the test code.
-* The full list of inline `Event` variants is an implementation detail; "the
-  first inline event of the line" plus the table-cell reason is enough.
-
-Everything else names existing functions and is needed.
-
-###### 4. Trivial -- tests *(first point: comment fixed)*
-
-* `test_line_markers_inline_html_text` (`processing/tests.rs:3394`) also covers
-  HTML-block cases (`<iframe src="x">\nfallback…`, `<div>\n<title_x>`), so its
-  name and comment ("which inline HTML opens") undersell it.
-* `test_keep_client_doc_block_contents` (`translation.rs:2131`) tests the helper,
-  not its call in `send_re_translation`. Only the browser tests catch a removed
-  call.
-
-##### Overengineering, piece by piece
-
-Everything is required except where noted:
-
-* Marker loop, `file_ranges`, `opaque_depth`: the task and the prototype.
-* `xref` tracking: the 80-column wrap makes two-line `<xref>`s common, and the
-  dehydrating walk skips `<xref>` children, so markers would be saved.
-* Diagram and raw-text tracking: without it, `a <textarea>\nb</textarea>` shows
-  `&lt;l-n>2…` as text.
-* Ammonia and clean lists, dehydration, `compare_html`: required.
-* `keep_client_doc_block_contents`: required, per the spec's browser-test claim.
-* CSS and valid elements: required.
-* Clipboard filter: a real but small case (pasting into another app).
-* Can go: the `PreInit` filter, via finding 1.
-* Still a guard with no reproduced bug: the caret skip (kept by an earlier
-  decision).
+- Severity: minor
+- Category: correctness
+- Location: `client/src/tinymce-config.mts:215-231`
+- What is wrong: while a trailing marker from finding 1 is present (until the re-translation, delayed while keys keep coming), Enter at the end of the first half makes a non-empty block.
+- Evidence: from `<p><l-n>1</l-n>abc <l-n>2</l-n></p><p>def</p>`, End then Enter gives a middle paragraph `<p>&nbsp;<l-n>2</l-n></p>`, saved as `abc⏎⏎ ⏎⏎def⏎` (`main` gives `<p><br></p>`). With the caret after the marker (offset 4) it gives a zero-height `<p><l-n>2</l-n></p>` with the caret inside the marker, and a typed `Q` goes into the next paragraph (`Qdef`). If only the `compare_html` half of fix 1 is applied, no re-translation replaces the trailing marker and this state persists.
+- Smallest fix: the `NewBlock` change of finding 1 (no trailing markers remain).
 
 ##### Small remarks
 
-* Round 5 rule checked. The tag name ends where the HTML tokenizer ends it
-  (whitespace, `/`, `>`), and the name is lowercased. So `</iframex>` doesn't
-  close and `<iframe/>` opens, as in html5ever. Correct.
-* `<a title="x <iframe y">link</a>\nmore\n\nPara\n` loses the markers for lines
-  2 and 4. This is the same class as the rejected "tag name inside a comment";
-  markers are only missing.
-* The known deviation is confirmed: `/*\n a\n*/\nx;\n// b\n` (`a.js`) gives
-  markers 1 and 4 instead of 2 and 5.
-* Client markers stay stale after Client edits until an IDE-side translation.
-  This is documented in spec item 8 and acceptable for hidden metadata.
-* Fine with no change:
-  * Multi-line inline tags and comments get their marker after the tag
-    (`<span\nclass=x><l-n>2</l-n>y`).
-  * Footnotes, definition lists, setext headings, lazy quotes, tables, task
-    lists, nested lists with code, C block comments and indented Python doc
-    blocks are all numbered right.
-  * For every probe, the save matches the save of the marker-stripped HTML
-    (except finding 2).
-  * Saving Client-shaped HTML (marker inside `<strong>`, marker plus bogus `<br>`)
-    matches the save without markers.
+- `overall_3::test_8` checks the saved `<p><br></p>`, not the height that the spec's test table (line 146) names.
+- `line_starts` (`processing.rs:1528`) counts only `\n`, so markers are wrong in a Markdown document with lone `\r` line endings (rare).
+- Inline `<pre>a⏎b</pre>` inside a paragraph gets a marker inside the `<pre>`; it is hidden and dropped on save.
+- Overengineering: each piece (unmarked-element tracking, `keep_client_doc_block_contents`, the `CLEAN_*` additions, `GetContent` stripping, the `NewBlock` handler, the caret-walk guard) is tied to a reproducible bug; nothing to delete. Spec length: nothing beyond what was decided.
+- Verified fine: placement in C++, Python, Rust, JS and Markdown documents; comments, CDATA, `svg`/`math`/`template`/`xref`; definition lists, alerts, footnotes, tables, setext headings; save round-trips; undo/redo of Enter; lists; headings; several markers in one block; Backspace; test expectation changes are marker-only.
 
 ##### Verdict
 
-* Does the change solve the task? **Yes.** Every Markdown line with inline
-  content gets a correct marker. The exceptions match the prototype plus the
-  necessary raw-text, diagram and `xref` cases. Markers stay out of saves except
-  for malformed input (finding 2).
-* Remaining findings: two minor, two trivial. None is major.
-* The three most important changes:
-  1. In `NewBlock`, move the markers into `newBlock`, then delete the `PreInit`
-     filter (finding 1). This is a fix and a simplification at once.
-  2. Decide on the unclosed-comment case: track `<!--`…`-->`, or record it as
-     malformed (finding 2).
-  3. Optionally trim the spec's test table and the inline-event list
-     (finding 3).
+- Solves the task: yes. Each Markdown line gets the right `<l-n>` where one is possible, the exceptions hold, and markers never reach the saved file.
+- Remaining findings: not trivial. One editing regression a user can hit (finding 1) and two minor ones, all caused by a marker on which the Client's DOM and the re-translation disagree.
+- Three most important changes:
+  1. `NewBlock` handler: move markers with no visible content after them into the new block.
+  2. `compare_html`: remove markers from `raw_html` before `transform_html`/`minify`.
+  3. `restoreSelection`: step from an `<l-n>` to its next sibling.
 
 </details>
 
