@@ -303,15 +303,15 @@ HTML sanitizers must never unwrap `<l-n>` (Ammonia's default), which turns
 
 Hydration invariants:
 
-* `hydrate_dom` strips `<l-n>` inside `<xref>` during `hoist_fragment_content`, before `hydrate_source_xref` captures `data-content` for dehydration (<xref ref="cc-HZyE2Bv-eI"></xref>).
+* The pre-pass at the start of `hydrate_dom` strips `<l-n>` inside `<xref>`, before `hydrate_source_xref` captures `data-content` for dehydration (<xref ref="cc-HZyE2Bv-eI"></xref>).
 * `<l-n>` inside `<fragment>` is naturally moved after the fragment by `hoist_fragment_content`.
 * Hydrated gather lists hold cleaned fragment HTML and never contain `<l-n>`.
 * At the start of `hydrate_dom`, before `hoist_fragment_content`, fact
   collection, or any call to `hydrate_child` or `replace_math_node`, remove
   every descendant `<l-n>` and its content from `<pre>`, `<code>`,
-  `wc-mermaid`, `graphviz-graph`, and `<span>` elements whose `class` token
-  list contains `math` and either `math-inline` or `math-display`. Use the same
-  subtree removal and merging of adjacent text nodes required by the
+  `wc-mermaid`, `graphviz-graph`, `<xref>`, and `<span>` elements whose
+  `class` token list contains `math` and either `math-inline` or `math-display`.
+  Use the same subtree removal and merging of adjacent text nodes required by the
   dehydration pre-pass. Select these containers by tag and class before
   inspecting their children. Placement can insert tags inside hand-written HTML
   even though Markdown code blocks and math events keep their generated
@@ -319,8 +319,7 @@ Hydration invariants:
   otherwise valid math and diagram content without removing tags elsewhere in
   the document.
 
-<h4 id="cc-Wm3Zt9Kq2B" data-gather="cc-Hx4rQ7mWbN">Implementation of Sanitization &amp; hydration</h4>
-
+<h3 id="cc-Wm3Zt9Kq2B" data-gather="cc-Hx4rQ7mWbN">Implementation of Sanitization &amp; hydration</h3>
 
 ### Dehydration
 * **Removal:** A separate pre-pass deletes every `l-n` element and its content—matching on local name across all depths and namespaces (including foreign `<svg>`/`<math>` contexts and `template_contents`). Both callers of `dehydrating_walk_node` (the Markdown document path in `codechat_for_web_to_source` and `doc_block_html_to_markdown`) and the test helper `dehydrate_html` run it first. It must be a separate pass because `dehydrating_walk_node` doesn't descend into the nodes it replaces (Mermaid/GraphViz, math, `<pre>` with `<br>`), and a stray tag would block those replacements, which require a single text child or only text and `<br>` children.
@@ -362,7 +361,10 @@ line numbers should compare HTML after deleting tags with
 `strip_line_number_tags`. Existing exact-HTML assertions outside these files
 (`server/tests/overall/overall_1.rs`, `overall_2.rs`, and
 `server/src/ide/vscode/tests.rs`), which can't reach a `pub(crate)` helper or
-compare whole messages, are updated to include the expected tags.
+compare whole messages, are updated to include the expected tags. The
+hand-written-tag warning test lives in `server/tests/line_number_warnings.rs`,
+its own test binary, because `log::set_logger` can be set only once per process
+and the `ide::vscode` lib tests install log4rs.
 
 Required cases:
 
