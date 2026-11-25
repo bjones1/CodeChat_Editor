@@ -319,6 +319,8 @@ Hydration invariants:
   otherwise valid math and diagram content without removing tags elsewhere in
   the document.
 
+<h4 id="cc-Wm3Zt9Kq2B" data-gather="cc-Hx4rQ7mWbN">Implementation of Sanitization &amp; hydration</h4>
+
 
 ### Dehydration
 * **Removal:** A separate pre-pass deletes every `l-n` element and its content—matching on local name across all depths and namespaces (including foreign `<svg>`/`<math>` contexts and `template_contents`). Both callers of `dehydrating_walk_node` (the Markdown document path in `codechat_for_web_to_source` and `doc_block_html_to_markdown`) and the test helper `dehydrate_html` run it first. It must be a separate pass because `dehydrating_walk_node` doesn't descend into the nodes it replaces (Mermaid/GraphViz, math, `<pre>` with `<br>`), and a stray tag would block those replacements, which require a single text child or only text and `<br>` children.

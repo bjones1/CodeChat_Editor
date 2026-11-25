@@ -4009,3 +4009,107 @@ fn test_line_number_tags_source_files() {
     assert_eq!(lines, vec![vec![], vec![], vec![6], vec![8]]);
     assert_eq!(doc_blocks[3], "<p><l-n>8</l-n>last");
 }
+
+// Verify the container of a hand-written construct holds no line number tags
+// after hydration, so that it still hydrates; the whole translation, with tags
+// removed, must equal the expected hydrated HTML.
+fn assert_hydrated_without_inner_tags(
+    // The source file's contents.
+    source: &str,
+    // The text which opens the container whose contents must hold no tags.
+    container_start: &str,
+    // The text which closes that container.
+    container_end: &str,
+    // The expected hydrated doc block, without line number tags.
+    expected: &str,
+) {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    let translation =
+        source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, Some(cache.clone()))
+            .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    let contents = &code_mirror.doc_blocks[0].contents;
+    let start = contents.find(container_start).expect(contents);
+    let end = start + contents[start..].find(container_end).expect(contents);
+    assert!(
+        !contents[start..end].contains("<l-n>"),
+        "{source:?}: {contents}"
+    );
+    assert_eq!(strip_line_number_tags(contents), expected, "{source:?}");
+    // The cache must hold no inner tags either.
+    let cache_guard = cache.lock().unwrap();
+    for file in cache_guard.files.values() {
+        for target in file.targets.values() {
+            assert!(!target.inner_html.contains("<l-n"), "{source:?}");
+        }
+        for fragment in file.fragments.values() {
+            assert!(!fragment.content.contains("<l-n"), "{source:?}");
+        }
+    }
+}
+
+// Verify that tags placed inside multi-line math and diagrams are removed
+// before hydration, which requires a single text child, while the tag before
+// the content remains.
+#[test]
+fn test_hydrate_line_number_tags_in_literal_containers() {
+    assert_hydrated_without_inner_tags(
+        "// A <span class=\"math math-inline\">x\n// y</span>.\n",
+        "<span",
+        "</span>",
+        "<p>A <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x y\\)</span>.",
+    );
+    assert_hydrated_without_inner_tags(
+        "// A <span class=\"math math-display\">x\n// y</span>.\n",
+        "<span",
+        "</span>",
+        "<p>A <span class=\"math math-display mceNonEditable\" contenteditable=false>$$x y$$</span>.",
+    );
+    assert_hydrated_without_inner_tags(
+        "// <pre><code class=\"language-mermaid\">graph TD\n// A-->B\n// </code></pre>\n",
+        "<wc-mermaid",
+        "</wc-mermaid>",
+        "<wc-mermaid>graph TD\nA-->B\n</wc-mermaid>",
+    );
+    assert_hydrated_without_inner_tags(
+        "// <pre><code class=\"language-graphviz\">digraph {\n// a->b\n// }</code></pre>\n",
+        "<graphviz-graph",
+        "</graphviz-graph>",
+        "<graphviz-graph>digraph {\na->b\n}</graphviz-graph>",
+    );
+    assert_hydrated_without_inner_tags(
+        "// <wc-mermaid>graph TD\n// A-->B</wc-mermaid>\n",
+        "<wc-mermaid",
+        "</wc-mermaid>",
+        "<p><wc-mermaid>graph TD\nA-->B</wc-mermaid>",
+    );
+    assert_hydrated_without_inner_tags(
+        "// <graphviz-graph>digraph {\n// a->b\n// }</graphviz-graph>\n",
+        "<graphviz-graph",
+        "</graphviz-graph>",
+        "<p><graphviz-graph>digraph {\na->b\n}</graphviz-graph>",
+    );
+}
+
+// Verify that a multi-line cross-reference's `data-content` holds no tags,
+// since dehydration restores the cross-reference from it.
+#[test]
+fn test_hydrate_xref_multiline_content_has_no_tags() {
+    let translation = source_to_codechat_for_web(
+        "// See <xref ref=\"t\">a\n// b</xref>\n",
+        Path::new("foo.js"),
+        0.0,
+        false,
+        None,
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    let contents = &code_mirror.doc_blocks[0].contents;
+    assert!(contents.contains("data-content=\"a\nb\""), "{contents}");
+    assert!(contents.contains("<l-n>1</l-n>See"), "{contents}");
+    assert_eq!(contents.matches("<l-n>").count(), 1, "{contents}");
+}

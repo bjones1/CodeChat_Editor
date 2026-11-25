@@ -2278,7 +2278,10 @@ fn hydrate_dom(
     is_markdown: bool,
     // The parsed, patched DOM plus the walk results needed by later phases.
 ) -> io::Result<(Rc<Node>, WalkContext)> {
-    // Everything below treats a `<fragment>` as empty, so this comes first.
+    // Hydration's replacements and the cache's captured content require these
+    // elements to hold no tags, so this comes before everything else.
+    remove_inner_line_number_tags(&dom);
+    // Everything below treats a `<fragment>` as empty, so this comes next.
     hoist_fragment_content(&dom);
     // Stamp the file and canonicalize its path before taking the cache lock, so
     // that no I/O happens while the lock is held. The stamp captures the state
@@ -2373,6 +2376,36 @@ fn hydrate_dom(
     }
     drop(cache_guard);
     Ok((dom, walk_context))
+}
+
+/// Remove the `<l-n>` line number tags which the translation to HTML injected
+/// inside elements whose contents are literal text or are captured verbatim,
+/// per <xref ref="cc-e7tpKZV9sK"></xref>. These are `<pre>`, `<code>`,
+/// `wc-mermaid`, `graphviz-graph`, math `<span>`s, and `<xref>`s; tags anywhere
+/// else are kept. Math, Mermaid, and GraphViz hydration each require a single
+/// text child, and an `<xref>`'s `data-content` is captured from its children
+/// (see `hydrate_source_xref`), so a tag inside any of them would break the
+/// replacement or leak into the cache and the saved source.
+/// <fragment id="cc-Hx4rQ7mWbN"></fragment>
+fn remove_inner_line_number_tags(
+    // The node whose descendants are searched.
+    node: &Rc<Node>,
+) {
+    for child in node.children.borrow().iter() {
+        let is_literal_container = match get_node_tag_name(child) {
+            Some("pre" | "code" | "wc-mermaid" | "graphviz-graph" | "xref") => true,
+            Some("span") => get_attr_value(child, "class").is_some_and(|class| {
+                let has_token = |wanted: &str| class.split_ascii_whitespace().any(|t| t == wanted);
+                has_token("math") && (has_token("math-inline") || has_token("math-display"))
+            }),
+            _ => false,
+        };
+        if is_literal_container {
+            remove_line_number_tags(child);
+        } else {
+            remove_inner_line_number_tags(child);
+        }
+    }
 }
 
 /// Move anything inside a `<fragment>` to just after it. Hydration replaces a
