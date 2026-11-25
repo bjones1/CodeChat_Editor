@@ -1800,6 +1800,7 @@ fn compare_html(
         // after a Client edit, and a line typed in the Client has none. Strip
         // them before the normalizations below, which match text that a tag
         // could otherwise separate.
+        // <fragment id="cc-C9BUjQM51i"></fragment>
         let normalized_html = strip_line_number_tags(normalized_html);
         let raw_html = strip_line_number_tags(&raw_html);
         // pulldown-cmark puts a newline after a `<br>`, which `minify` doesn't

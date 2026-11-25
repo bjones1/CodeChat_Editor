@@ -71,6 +71,7 @@ macro_rules! make_parse_to_code_doc_blocks {
                     Rule::inline_comment => {
                         // A doc block's height is that of the full source span
                         // it consumed, not of its (processed) contents.
+                        // <fragment id="cc-4sw3FiojeX"></fragment>
                         let lines = block.as_str().split_inclusive('\n').count();
                         // Gather all tokens in the inline comment.
                         let mut inline_comment = block.into_inner();
@@ -212,6 +213,7 @@ macro_rules! make_parse_to_code_doc_blocks {
                         // source line `k`. Dedenting keeps every line, and
                         // trimming the optional space can only empty (and so
                         // remove) the last one.
+                        // <fragment id="cc-EnMVWxNfWT"></fragment>
                         let contents_line_offsets =
                             (0..full_comment.split_inclusive('\n').count()).collect();
 

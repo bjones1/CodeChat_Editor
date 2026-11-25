@@ -1019,6 +1019,48 @@ fn test_source_to_codechat_for_web_1() {
     );
 }
 
+// A doc block occupies one CodeMirror line per source line, including
+// delimiter-only lines, so later blocks keep their IDE line numbers; see
+// <xref ref="cc-dl60mkSR4A"></xref>. JavaScript uses the regex lexer; C uses
+// the Pest parser.
+#[test]
+fn test_source_to_codechat_for_web_delimiter_lines() {
+    assert_eq!(
+        source_to_codechat_for_web(
+            "/*\n   Block text.\n */\nlet a = 1;\n// After.\n",
+            Path::new("foo.js"),
+            0.0,
+            false,
+            None
+        ),
+        Ok(build_codechat_for_web(
+            "javascript",
+            "\n\n\nlet a = 1;\n\n",
+            vec![
+                build_codemirror_doc_block(0, 3, "", "/*", "<p><l-n>2</l-n>Block text."),
+                build_codemirror_doc_block(14, 15, "", "//", "<p><l-n>5</l-n>After."),
+            ]
+        ))
+    );
+    assert_eq!(
+        source_to_codechat_for_web(
+            "int x;\n/*\n   Block text.\n */\nint y;\n// After.\n",
+            Path::new("foo.c"),
+            0.0,
+            false,
+            None
+        ),
+        Ok(build_codechat_for_web(
+            "cpp",
+            "int x;\n\n\n\nint y;\n\n",
+            vec![
+                build_codemirror_doc_block(7, 10, "", "/*", "<p><l-n>3</l-n>Block text."),
+                build_codemirror_doc_block(17, 18, "", "//", "<p><l-n>6</l-n>After."),
+            ]
+        ))
+    );
+}
+
 #[test]
 fn test_find_path_to_toc_1() {
     let (temp_dir, test_dir) = prep_test_dir!();

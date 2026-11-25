@@ -1658,22 +1658,66 @@ fn build_segment_line_map(
 static HAND_WRITTEN_LINE_NUMBER_TAG: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i-u)<(/?l-n)([\t\n\x0C\r />])").unwrap());
 
-// Matches the opener of an element whose contents html5ever parses as raw text
-// (or otherwise outside the DOM tree which dehydration walks), or of a
+// The (lowercase) names of elements whose contents html5ever parses as raw text
+// or otherwise outside the DOM tree which dehydration walks.
+const RAW_TEXT_ELEMENT_NAMES: [&str; 12] = [
+    "script",
+    "style",
+    "textarea",
+    "title",
+    "xmp",
+    "iframe",
+    "noembed",
+    "noframes",
+    "noscript",
+    "plaintext",
+    "template",
+    "select",
+];
+
+// Matches the opener of an element in `RAW_TEXT_ELEMENT_NAMES`, or of a
 // comment. The first group captures the element name; it doesn't participate
 // for a comment.
 static RAW_TEXT_OPENER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(concat!(
-        r"(?i-u)<(?:(script|style|textarea|title|xmp|iframe|noembed|noframes|",
-        r"noscript|plaintext|template|select)[\t\n\x0C\r />]|!--)"
+    Regex::new(&format!(
+        r"(?i-u)<(?:({})[\t\n\x0C\r />]|!--)",
+        RAW_TEXT_ELEMENT_NAMES.join("|")
     ))
     .unwrap()
 });
 
+/// Find the end tag `</name` followed by a byte which ends an HTML tag name,
+/// matching ASCII case-insensitively as html5ever does (`(?i-u)` in regex
+/// terms).
+fn find_raw_text_end_tag(
+    // The HTML to search.
+    html: &str,
+    // The lowercase element name.
+    name: &str,
+    // The byte offset in `html` at which to begin searching.
+    position: usize,
+    // The byte offset just past the terminating byte of the first match, or
+    // `None` if there's no match.
+) -> Option<usize> {
+    let bytes = html.as_bytes();
+    let match_len = "</".len() + name.len() + 1;
+    let last_start = bytes.len().checked_sub(match_len)?;
+    (position..=last_start).find_map(|start| {
+        let candidate = &bytes[start..start + match_len];
+        (candidate.starts_with(b"</")
+            && candidate[2..match_len - 1].eq_ignore_ascii_case(name.as_bytes())
+            && matches!(
+                candidate[match_len - 1],
+                b'\t' | b'\n' | b'\x0C' | b'\r' | b' ' | b'/' | b'>'
+            ))
+        .then_some(start + match_len)
+    })
+}
+
 /// What ends the active raw-text suppression region.
 enum RawTextCloser {
-    /// The end tag of this element, whose matcher is stored here.
-    EndTag(Regex),
+    /// The end tag of this element, whose lowercase name is stored here.
+    EndTag(&'static str),
     /// `-->` or `--!>`, ending a comment.
     Comment,
     /// Nothing: `<plaintext>` never closes.
@@ -1788,8 +1832,14 @@ impl<'a> LineNumberTagger<'a> {
         self.reset_suppression();
     }
 
-    // Map a Markdown line to a source line, or `None` if no tags are wanted.
-    fn source_line(&self, md_line: usize) -> Option<usize> {
+    /// Map a Markdown line to a source line.
+    fn source_line(
+        &self,
+        // The 0-based Markdown line.
+        md_line: usize,
+        // The 1-based source line, or `None` if no tags are wanted (no line
+        // map) or the line is part of a doc block separator.
+    ) -> Option<usize> {
         self.line_map?.source_line(md_line)
     }
 
@@ -1798,7 +1848,11 @@ impl<'a> LineNumberTagger<'a> {
     /// a false positive in an attribute) can't suppress tags in later doc
     /// blocks. The separator's own closers, scanned before this, usually end
     /// the region first.
-    fn reset_at_segments(&mut self, md_line: usize) {
+    fn reset_at_segments(
+        &mut self,
+        // The 0-based Markdown line on which the current event begins.
+        md_line: usize,
+    ) {
         while self
             .segment_starts
             .get(self.next_segment)
@@ -1809,6 +1863,8 @@ impl<'a> LineNumberTagger<'a> {
         }
     }
 
+    /// End any raw-text suppression region, warning (with the opener's source
+    /// line, when known) that it was never closed.
     fn reset_suppression(&mut self) {
         if let Some(suppression) = self.suppression.take() {
             match suppression.opener_line {
@@ -1897,13 +1953,15 @@ impl<'a> LineNumberTagger<'a> {
                         }
                         Some(name) => {
                             position = opener.end();
-                            let name = name.as_str().to_ascii_lowercase();
+                            // `RAW_TEXT_OPENER` matched one of these names.
+                            let name = RAW_TEXT_ELEMENT_NAMES
+                                .into_iter()
+                                .find(|known| known.eq_ignore_ascii_case(name.as_str()))
+                                .unwrap();
                             if name == "plaintext" {
                                 RawTextCloser::Never
                             } else {
-                                RawTextCloser::EndTag(
-                                    Regex::new(&format!(r"(?i-u)</{name}[\t\n\x0C\r />]")).unwrap(),
-                                )
+                                RawTextCloser::EndTag(name)
                             }
                         }
                     };
@@ -1915,9 +1973,7 @@ impl<'a> LineNumberTagger<'a> {
                 }
                 Some(suppression) => {
                     let closer_end = match &suppression.closer {
-                        RawTextCloser::EndTag(regex) => {
-                            regex.find_at(html, position).map(|found| found.end())
-                        }
+                        RawTextCloser::EndTag(name) => find_raw_text_end_tag(html, name, position),
                         RawTextCloser::Comment => ["-->", "--!>"]
                             .iter()
                             .filter_map(|closer| {
@@ -1943,7 +1999,11 @@ impl<'a> LineNumberTagger<'a> {
 /// inline content qualifies: TinyMCE wraps a tag placed between blocks in an
 /// empty paragraph, break events begin on the line they end, and an `End`
 /// event shares its `Start`'s range.
-fn is_line_number_trigger(event: &Event) -> bool {
+fn is_line_number_trigger(
+    // The next event from the Markdown parser.
+    event: &Event,
+    // True if a tag may precede this event.
+) -> bool {
     matches!(
         event,
         Event::Text(_)

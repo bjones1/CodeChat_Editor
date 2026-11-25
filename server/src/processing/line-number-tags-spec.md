@@ -264,7 +264,22 @@ occupies six source lines. `First` has source-line offset `1` and `Second`
 has offset `4`, so their tags are `2` and `5` regardless of which blank lines
 the lexer retains in the contents.
 
-<h3 id="cc-675iCUV0TK" data-gather="cc-2RR1Hkiqvd cc-Pgf8BNFlSN cc-QAaRjE3zO2">Implementation of Source line offsets</h3>
+**Client document height.** `source_to_codechat_for_web` replaces each doc
+block in `CodeMirror.doc` with one newline per *source* line it occupies
+(`DocBlock.lines`), not one per content line, so that CodeMirror line numbers
+match IDE line numbers. Each `CodeMirrorDocBlock` therefore spans
+`to - from = DocBlock.lines` newlines, and a comment with delimiter-only lines
+(such as `/*` or `*/` on its own line) occupies more Client lines than its
+contents, shifting the `from`/`to` of every later block. One exception keeps
+round trips exact: a doc block whose contents are empty, which the lexers
+produce only for an empty comment ending the file without a final newline,
+emits `lines - 1` newlines, so the missing final newline stays missing. As
+before, `to` is at least `from + 1`. `render_fragment_content`'s gutter numbers
+use the same source heights through `code_doc_block_lines`. The Client→IDE
+direction is unaffected: `code_mirror_to_code_doc_blocks` regenerates
+delimiters from `contents` and ignores heights.
+
+<h3 id="cc-675iCUV0TK" data-gather="cc-2RR1Hkiqvd cc-Pgf8BNFlSN cc-QAaRjE3zO2 cc-1HKC5Ndgmt cc-U5oZkvs4iD cc-Ad95J3JIlK cc-4sw3FiojeX cc-EnMVWxNfWT">Implementation of Source line offsets</h3>
 
 <h2 id="cc-e7tpKZV9sK">Sanitization & hydration</h2>
 
@@ -322,7 +337,7 @@ Line numbers shift when lines are added/removed above them or when save-time wor
 * **Diff amplification (source files only):** Inserting a line renumbers all later tags, so `diff_code_mirror_doc_blocks` emits a contents update for every later doc block. Without tags, only their positions change, and `DocBlockWidget.eq` (which ignores position) skips `updateDOM`. With tags, each later block resets its `innerHTML`, re-runs MathJax, re-creates Mermaid/GraphViz elements, and (if focused) calls TinyMCE `setContent`. Markdown documents are unaffected, since the Client already calls `setContent` on the whole document for every update.
   * *TODO:* If a source file with 50 doc blocks containing math takes more than 100 ms from an IDE line insert to the Client update, switch to block-relative line numbers plus a per-block start offset.
 
-<h3 id="cc-FaTzUELlSl" data-gather="cc-TRSJgb1Wta">Implementation of Re-translation &amp; diffs</h3>
+<h3 id="cc-FaTzUELlSl" data-gather="cc-TRSJgb1Wta cc-C9BUjQM51i">Implementation of Re-translation &amp; diffs</h3>
 
 ### Consumers *(informative)*
 

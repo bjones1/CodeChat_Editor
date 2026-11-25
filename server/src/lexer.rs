@@ -705,6 +705,7 @@ pub fn source_lexer(
     // Provide a method to intelligently append to the code/doc block vec. Empty
     // appends are ignored; appends of the same type append to `contents`
     // instead of creating a new entry.
+    // <fragment id="cc-1HKC5Ndgmt"></fragment>
     fn append_code_doc_block(
         // The code/doc block vec to append to.
         classified_source: &mut Vec<CodeDocBlock>,
@@ -970,6 +971,7 @@ pub fn source_lexer(
                             // An inline comment occupies exactly one source
                             // line, which supplies its only content line (if
                             // any).
+                            // <fragment id="cc-U5oZkvs4iD"></fragment>
                             let comment_line_start =
                                 current_code_block_index + code_lines_before_comment.len();
                             append_code_doc_block(
@@ -1431,6 +1433,7 @@ pub fn source_lexer(
                                     // it, since MATLAB's closing regex may
                                     // consume newlines. Dedenting can only
                                     // empty (and so remove) the final line.
+                                    // <fragment id="cc-Ad95J3JIlK"></fragment>
                                     let comment_line_start =
                                         current_code_block_index + code_lines_before_comment.len();
                                     let first_body_line =
