@@ -473,6 +473,12 @@ Reviewed the Dehydration, Re-translation \& diffs, and Testing sections
 use a separate tag-removal pre-pass, state how long tags stay stale, scope diff
 amplification to source files, and add discriminating test cases.
 
+Implemented Phases 5 and 7: a pre-hydration pass in `hydrate_dom` that removes
+`<l-n>` tags from `<pre>`, `<code>`, math, Mermaid/GraphViz, and `<xref>`
+(fixing review items B1 and B2), plus the remaining required tests (hydration
+cleanup, container-bounded raw-text blocks, hand-written tag warnings, and diff
+amplification).
+
 #### Specification review rounds
 
 | Round | Scope                                         | Findings                                    | Main changes made                                                                                                                                                                                                                                                                                                                                                                             |
