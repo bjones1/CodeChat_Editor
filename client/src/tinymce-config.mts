@@ -197,12 +197,18 @@ export const init = async (
 // The Server puts a hidden marker before the content of each Markdown line;
 // see [line-number-spec.md](../../line-number-spec.md).
 //
-// TinyMCE counts the number inside a marker as content. When Enter splits a
-// block just after its marker, the first half holds only the marker, so it
-// isn't treated as empty: it gets no `<br>`, so it has no height once saved,
-// and Enter in an empty-looking list item adds an item instead of leaving the
-// list. Move the marker to the second half, which holds the text of its line,
-// and give the first half the `<br>` of an empty block.
+// When Enter splits a block just before the text of a line, that line's marker
+// stays at the end of the first half. TinyMCE counts the number inside it as
+// content, so a first half holding only markers isn't treated as empty: it
+// gets no `<br>`, so it has no height once saved, and Enter in an empty-looking
+// list item adds an item instead of leaving the list. Move each marker with
+// nothing after it to the second half, which holds the text of its line, and
+// give an emptied first half the `<br>` of an empty block.
+//
+// TinyMCE makes the space at the end of a text node non-breaking when typing
+// near it. A marker ends a text node at each line, so the space which stands
+// for the newline before it would be saved as a non-breaking space; make it a
+// space again in the HTML TinyMCE returns.
 //
 // A copy or cut puts the selected HTML on the clipboard. Leave the markers out
 // of it: their numbers don't fit where the text is pasted, and an editor
@@ -216,13 +222,22 @@ const handleLineMarkers = (
         // When Enter splits a block, the first half stays in place and the
         // second half becomes `newBlock`.
         const block = newBlock.previousElementSibling;
-        if (block?.querySelector("l-n") && !block.querySelector("br")) {
-            const withoutMarkers = block.cloneNode(true) as Element;
-            withoutMarkers
-                .querySelectorAll("l-n")
-                .forEach((marker) => marker.remove());
-            if (editor.dom.isEmpty(withoutMarkers)) {
-                newBlock.prepend(...block.querySelectorAll("l-n"));
+        if (!block) {
+            return;
+        }
+        const rest = editor.dom.createRng();
+        rest.setEnd(block, block.childNodes.length);
+        const trailingMarkers = [...block.querySelectorAll("l-n")].filter(
+            (marker) => {
+                rest.setStartAfter(marker);
+                const after = rest.cloneContents();
+                after.querySelectorAll("l-n").forEach((m) => m.remove());
+                return editor.dom.isEmpty(after);
+            },
+        );
+        if (trailingMarkers.length) {
+            newBlock.prepend(...trailingMarkers);
+            if (editor.dom.isEmpty(block) && !block.querySelector("br")) {
                 editor.dom.add(block, "br", { "data-mce-bogus": "1" });
             }
         }
@@ -231,6 +246,12 @@ const handleLineMarkers = (
     // plain text comes from `innerText`, which already leaves out hidden
     // markers, so a marker typed as text stays there.
     editor.on("GetContent", (event) => {
+        if (typeof event.content === "string") {
+            event.content = event.content.replace(
+                /(?:&nbsp;|\u00a0)(?=<l-n>)/g,
+                " ",
+            );
+        }
         if (event.selection && event.format === "html") {
             event.content = event.content.replace(/<l-n>\d+<\/l-n>/g, "");
         }

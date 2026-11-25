@@ -1801,18 +1801,19 @@ fn compare_html(
     // processing by TinyMCE.
     raw_html: &str,
 ) -> bool {
+    // Remove markers first: `minify` keeps a space next to one, such as a space
+    // at the end of a block followed by a marker, and one between `<p>` and
+    // `<iframe` would hide the fix-up below.
+    let normalized_html = LINE_MARKER.replace_all(normalized_html, "");
+    let raw_html = LINE_MARKER.replace_all(raw_html, "");
     // Remove TinyMCE temp data before comparison; this also normalizes the
     // characters via html5ever. Order here in very important: the
     // `source_to_codechat_for_web()` function transforms, then minifies, since
     // both transform and minify tend to rearrange attributes in their own
     // preferred order. Use the same order to make comparisons work.
-    if let Ok(raw_html) = transform_html(raw_html, compare_html_walker)
+    if let Ok(raw_html) = transform_html(&raw_html, compare_html_walker)
         && let Ok(raw_html) = minify(&raw_html)
     {
-        // Remove markers first: one between `<p>` and `<iframe` would hide the
-        // fix-up below.
-        let normalized_html = LINE_MARKER.replace_all(normalized_html, "");
-        let raw_html = LINE_MARKER.replace_all(&raw_html, "");
         // pulldown-cmark puts a newline after a `<br>`, which `minify` doesn't
         // remove but TinyMCE does.
         let normalized_html = normalized_html.replace("<br> ", "<br>");
@@ -2120,6 +2121,17 @@ mod tests {
         let client = vec![CodeMirrorDocBlock {
             contents: "<p><l-n>1</l-n>Prev</p><p><l-n>3</l-n><iframe src=\"x\"></iframe></p>"
                 .to_string(),
+            ..ide[0].clone()
+        }];
+        assert!(doc_blocks_compare(&ide, &client));
+        // A space before a marker at the end of a block is trimmed as it would
+        // be without the marker.
+        let ide = vec![CodeMirrorDocBlock {
+            contents: "<p><l-n>1</l-n>abc<p><l-n>3</l-n>def".to_string(),
+            ..ide[0].clone()
+        }];
+        let client = vec![CodeMirrorDocBlock {
+            contents: "<p><l-n>1</l-n>abc <l-n>2</l-n></p><p>def</p>".to_string(),
             ..ide[0].clone()
         }];
         assert!(doc_blocks_compare(&ide, &client));

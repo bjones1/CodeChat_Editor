@@ -575,11 +575,21 @@ export const restoreSelection = ({
         // Avoid mutating `selectionPath` by making a copy of it.
         const selectionPathCopy = [...selectionPath];
         while (selectionPathCopy.length) {
-            const newSelectionNode =
+            let newSelectionNode =
                 selectionNode.childNodes[selectionPathCopy.shift()!];
             // If we get lost during the descent, then stop just before that.
             if (!(newSelectionNode instanceof Node)) {
                 break;
+            }
+            // A re-translation can put a hidden line marker before what was
+            // the first node of a block in the Client, such as a block made by
+            // Enter. Step over it, so that the caret isn't put in hidden text.
+            // <fragment id="cc-yDqinUyTF3"></fragment>
+            if (
+                newSelectionNode.nodeName === "L-N" &&
+                newSelectionNode.nextSibling
+            ) {
+                newSelectionNode = newSelectionNode.nextSibling;
             }
             selectionNode = newSelectionNode;
         }
