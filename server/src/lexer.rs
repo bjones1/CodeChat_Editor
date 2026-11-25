@@ -242,11 +242,22 @@ pub struct DocBlock {
     /// The contents of this block: documentation (with the comment delimiters
     /// removed).
     pub contents: String,
-    /// The number of source code lines in this doc block. Only valid when
-    /// converting from source code to its web-editable equivalent; in the
-    /// opposite conversion (web-editable to source file), this is not valid
-    /// (it's always set to 0).
+    /// The number of lines in the full normalized source span this doc block
+    /// consumed, including delimiter-only lines and empty comments; this is
+    /// never derived from `contents`, which may have lost those lines. Only
+    /// valid when converting from source code to its web-editable equivalent;
+    /// in the opposite conversion (web-editable to source file), this is not
+    /// valid (it's always set to 0).
     pub lines: usize,
+    /// Entry `k` is the 0-based offset, relative to the first source line of
+    /// this doc block, of the source line which supplied line `k` of
+    /// `contents` (as split by `split_inclusive('\n')`). Removed delimiter
+    /// lines leave gaps, so this can't be replaced by a single starting
+    /// offset. See
+    /// [Source line offsets](processing/line-number-tags-spec.md#cc-dl60mkSR4A).
+    /// Like `lines`, this is empty (and unused) when converting from
+    /// web-editable to source.
+    pub contents_line_offsets: Vec<usize>,
 }
 
 // To allow comparison for unit tests.
@@ -694,30 +705,28 @@ pub fn source_lexer(
     // Provide a method to intelligently append to the code/doc block vec. Empty
     // appends are ignored; appends of the same type append to `contents`
     // instead of creating a new entry.
-    //
-    // See if we have a PEG-based parser for this language; use that if
-    // available. This parser normalizes line endings on its own, so don't
-    // normalize here.
-    if let Some(parser) = language_lexer_compiled.language_lexer.parser {
-        return parser(source_code);
-    }
-    let mut classified_source: Vec<CodeDocBlock> = Vec::new();
-    let mut append_code_doc_block = |indent: &str, delimiter: &str, contents: &str| {
+    fn append_code_doc_block(
+        // The code/doc block vec to append to.
+        classified_source: &mut Vec<CodeDocBlock>,
+        indent: &str,
+        delimiter: &str,
+        contents: &str,
+        // For a doc block, the full source text the comment occupied, from the
+        // start of its first line through its final newline (or EOF). Ignored
+        // for code blocks.
+        source_span: &str,
+        // For a doc block, the source-line offset (relative to `source_span`)
+        // of each line of `contents`. Ignored for code blocks.
+        contents_line_offsets: Vec<usize>,
+    ) {
         // Don't append empty entries.
         if delimiter.is_empty() && contents.is_empty() {
             assert_eq!(indent, "");
             return;
         }
-        // Define a line as any characters up to an including a newline. If the
-        // contents doesn't end in a newline, then add an extra line. The
-        // reasoning: A string such as "foo" is one line (not zero lines), even
-        // without a final newline. Only the empty string "" is zero lines.
-        let lines = contents.matches('\n').count()
-            + (if contents.chars().last().unwrap_or('\n') == '\n' {
-                0
-            } else {
-                1
-            });
+        // A string such as "foo" is one line (not zero lines), even without a
+        // final newline; only the empty string "" is zero lines.
+        let lines = source_span.split_inclusive('\n').count();
         let is_code_block = indent.is_empty() && delimiter.is_empty();
         // See if there's a previous entry to potentially append to.
         if !classified_source.is_empty() {
@@ -728,8 +737,15 @@ pub fn source_lexer(
                     if last_doc_block.indent == indent && last_doc_block.delimiter == delimiter {
                         // Yes, so append the provided contents to it. We must
                         // access the array directly since `last_doc_block`
-                        // provides only a reference.
+                        // provides only a reference. The incoming offsets are
+                        // relative to the incoming comment's first line, which
+                        // follows all the source lines accumulated so far.
                         last_doc_block.contents += contents;
+                        last_doc_block.contents_line_offsets.extend(
+                            contents_line_offsets
+                                .iter()
+                                .map(|offset| offset + last_doc_block.lines),
+                        );
                         last_doc_block.lines += lines;
                         return;
                     }
@@ -754,9 +770,18 @@ pub fn source_lexer(
                 delimiter: delimiter.to_string(),
                 contents: contents.to_string(),
                 lines,
+                contents_line_offsets,
             })
         });
-    };
+    }
+
+    // See if we have a PEG-based parser for this language; use that if
+    // available. This parser normalizes line endings on its own, so don't
+    // normalize here.
+    if let Some(parser) = language_lexer_compiled.language_lexer.parser {
+        return parser(source_code);
+    }
+    let mut classified_source: Vec<CodeDocBlock> = Vec::new();
 
     // ### Main loop
     //
@@ -922,7 +947,14 @@ pub fn source_lexer(
                         ) {
                             // This is a doc block. Transition from the
                             // preceding code block to this doc block.
-                            append_code_doc_block("", "", code_lines_before_comment);
+                            append_code_doc_block(
+                                &mut classified_source,
+                                "",
+                                "",
+                                code_lines_before_comment,
+                                "",
+                                vec![],
+                            );
 
                             // Add this doc block by pushing the array
                             // \[whitespace before the inline comment, inline
@@ -935,10 +967,18 @@ pub fn source_lexer(
                             // (this might be just a newline or an EOF).
                             let contents =
                                 &full_comment[if has_space_after_comment { 1 } else { 0 }..];
+                            // An inline comment occupies exactly one source
+                            // line, which supplies its only content line (if
+                            // any).
+                            let comment_line_start =
+                                current_code_block_index + code_lines_before_comment.len();
                             append_code_doc_block(
+                                &mut classified_source,
                                 comment_line_prefix,
                                 matching_group_str,
                                 contents,
+                                &source_code[comment_line_start..source_code_unlexed_index],
+                                if contents.is_empty() { vec![] } else { vec![0] },
                             );
 
                             trace!(
@@ -1212,7 +1252,14 @@ pub fn source_lexer(
                                 {
                                     // Put the `code_lines_before_comment` into
                                     // the code block.
-                                    append_code_doc_block("", "", code_lines_before_comment);
+                                    append_code_doc_block(
+                                        &mut classified_source,
+                                        "",
+                                        "",
+                                        code_lines_before_comment,
+                                        "",
+                                        vec![],
+                                    );
 
                                     // If there's a space at the end of the
                                     // comment body, remove it; also remove the
@@ -1369,8 +1416,52 @@ pub fn source_lexer(
                                         contents
                                     };
 
+                                    // #### Block comment source-line offsets
+                                    //
+                                    // Each line of the trimmed comment body
+                                    // comes from consecutive source lines,
+                                    // starting with the opening delimiter's
+                                    // line unless a newline directly follows
+                                    // that delimiter (which trimming removed).
+                                    // The text after the closing delimiter
+                                    // either continues the body's last line or,
+                                    // when the body ended with a newline,
+                                    // starts a new one on the closing
+                                    // delimiter's line; count newlines to find
+                                    // it, since MATLAB's closing regex may
+                                    // consume newlines. Dedenting can only
+                                    // empty (and so remove) the final line.
+                                    let comment_line_start =
+                                        current_code_block_index + code_lines_before_comment.len();
+                                    let first_body_line =
+                                        usize::from(comment_body.starts_with('\n'));
+                                    let mut contents_line_offsets: Vec<usize> = (first_body_line..)
+                                        .take(trimmed_comment_body.split_inclusive('\n').count())
+                                        .collect();
+                                    if !post_closing_delimiter_line.is_empty()
+                                        && (trimmed_comment_body.is_empty()
+                                            || trimmed_comment_body.ends_with('\n'))
+                                    {
+                                        contents_line_offsets.push(
+                                            source_code
+                                                [comment_line_start..closing_delimiter_end_index]
+                                                .matches('\n')
+                                                .count(),
+                                        );
+                                    }
+                                    contents_line_offsets
+                                        .truncate(dedented_contents.split_inclusive('\n').count());
+
                                     // Add this doc block:
-                                    append_code_doc_block(indent, delimiter, dedented_contents);
+                                    append_code_doc_block(
+                                        &mut classified_source,
+                                        indent,
+                                        delimiter,
+                                        dedented_contents,
+                                        &source_code[comment_line_start
+                                            ..newline_or_eof_after_closing_delimiter_index],
+                                        contents_line_offsets,
+                                    );
 
                                     // print the doc block
                                     trace!(
@@ -1435,7 +1526,14 @@ pub fn source_lexer(
     }
 
     // Any leftover code is source code.
-    append_code_doc_block("", "", &source_code[current_code_block_index..]);
+    append_code_doc_block(
+        &mut classified_source,
+        "",
+        "",
+        &source_code[current_code_block_index..],
+        "",
+        vec![],
+    );
 
     classified_source
 }

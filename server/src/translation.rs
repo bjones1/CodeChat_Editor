@@ -1433,6 +1433,7 @@ impl TranslationTask {
                                     delimiter: String::new(),
                                     contents: self.code_mirror_doc.clone(),
                                     lines: 0,
+                                    contents_line_offsets: vec![],
                                 },
                             )
                         } else {
@@ -1458,6 +1459,7 @@ impl TranslationTask {
                                     delimiter: block.delimiter.clone(),
                                     contents: block.contents.clone(),
                                     lines: 0,
+                                    contents_line_offsets: vec![],
                                 },
                             )
                         };

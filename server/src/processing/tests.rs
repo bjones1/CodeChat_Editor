@@ -103,6 +103,7 @@ fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBloc
         delimiter: delimiter.to_string(),
         contents: contents.to_string(),
         lines: 0,
+        contents_line_offsets: vec![],
     })
 }
 

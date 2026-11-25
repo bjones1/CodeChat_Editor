@@ -581,12 +581,15 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
         if !code_contents.is_empty() {
             code_doc_block_arr.push(CodeDocBlock::CodeBlock(code_contents.to_string()));
         }
-        // Append the doc block.
+        // Append the doc block. Source heights and line maps describe the
+        // original source, which edits have since invalidated; reverse
+        // translation consults neither.
         code_doc_block_arr.push(CodeDocBlock::DocBlock(DocBlock {
             indent: codemirror_doc_block.indent.clone(),
             delimiter: codemirror_doc_block.delimiter.clone(),
             contents: codemirror_doc_block.contents.clone(),
             lines: 0,
+            contents_line_offsets: vec![],
         }));
         let byte_index_prev = byte_index;
         // Translate `to`.
@@ -1144,12 +1147,23 @@ pub fn source_to_codechat_for_web(
                         len += len_utf16(&code_string);
                     }
                     CodeDocBlock::DocBlock(doc_block) => {
+                        // The doc block is replaced by one newline per source
+                        // line it occupies; a comment with text which ends the
+                        // file without a final newline gains one, as it does
+                        // when saved. Contents are empty only for a comment
+                        // ending the file without a final newline, which
+                        // instead keeps the lack of that newline.
+                        let newlines = if doc_block.contents.is_empty() {
+                            doc_block.lines.saturating_sub(1)
+                        } else {
+                            doc_block.lines
+                        };
                         // Create the doc block.
                         code_mirror.doc_blocks.push(CodeMirrorDocBlock {
                             from: len,
                             // To. Note that the last doc block could be zero
                             // length, so handle this case.
-                            to: len + max(doc_block.lines, 1),
+                            to: len + max(newlines, 1),
                             indent: doc_block.indent.clone(),
                             delimiter: doc_block.delimiter.clone(),
                             // Used the markdown-translated replacement for this
@@ -1162,8 +1176,8 @@ pub fn source_to_codechat_for_web(
                         // Append newlines to the document; the doc block will
                         // replace these in the editor. This keeps the line
                         // numbering of non-doc blocks correct.
-                        source.push_str(&"\n".repeat(doc_block.lines));
-                        len += doc_block.lines;
+                        source.push_str(&"\n".repeat(newlines));
+                        len += newlines;
                     }
                 }
             }
