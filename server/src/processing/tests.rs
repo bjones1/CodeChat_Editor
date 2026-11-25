@@ -3921,6 +3921,30 @@ fn test_line_number_tags_raw_text() {
         tag_lines(&tagged_html("<a title=\"<script>\">a</a>\nb\n")),
         vec![1, 2]
     );
+    // A raw-text opener which starts an HTML block inside a container is
+    // ended early by the container boundary, but suppression continues: no
+    // tags follow, even in the paragraph after the container.
+    for markdown in [
+        "* <script>\n  a\n\nb\n",
+        "> <script>\n> a\n\nb\n",
+        "* <textarea>\n  a\n\nb\n",
+    ] {
+        assert_eq!(
+            tag_lines(&tagged_html(markdown)),
+            Vec::<usize>::new(),
+            "{markdown:?}"
+        );
+    }
+    // The block's own closer, even in a later HTML block of the same item,
+    // ends suppression, and tags resume.
+    assert_eq!(
+        tag_lines(&tagged_html("* <script>\n\n  a\n\n  </script>\n\nb\n")),
+        vec![7]
+    );
+    assert_eq!(
+        tag_lines(&tagged_html("* <script>\n  a\n  </script>\n  c\n\nd\n")),
+        vec![4, 6]
+    );
 }
 
 #[test]
@@ -3946,6 +3970,48 @@ fn test_line_number_tags_hand_written() {
         tagged_html("<l-nx>a</l-nx>\n"),
         "<p><l-n>1</l-n><l-nx>a</l-nx></p>\n"
     );
+}
+
+#[test]
+fn test_line_number_tags_diff_amplification() {
+    // Inserting a code line above a doc block renumbers its tags, so its
+    // `contents` change even though only its position shifts without tags.
+    let doc_blocks = |source: &str| {
+        let translation =
+            source_to_codechat_for_web(source, Path::new("foo.py"), 0.0, false, None).unwrap();
+        let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+            panic!("Translation produced a diff.");
+        };
+        code_mirror.doc_blocks
+    };
+    let before = doc_blocks("# first\nx = 1\n# second\ny = 2\n# third\n");
+    let after = doc_blocks("# first\nw = 0\nx = 1\n# second\ny = 2\n# third\n");
+    assert_eq!(before.len(), 3);
+    assert_eq!(after.len(), 3);
+    let transactions = diff_code_mirror_doc_blocks(&before, &after);
+    // The first doc block precedes the insertion: no transaction.
+    let updates: Vec<_> = transactions
+        .iter()
+        .map(|transaction| {
+            let CodeMirrorDocBlockTransaction::Update(update) = transaction else {
+                panic!("Expected only updates: {transactions:?}");
+            };
+            update
+        })
+        .collect();
+    assert_eq!(updates.len(), 2, "{transactions:?}");
+    // Each later block has a non-empty `contents` diff.
+    // Updates aren't ordered by position, so look them up by the block's
+    // original position.
+    let mut update_origins: Vec<_> = updates.iter().map(|update| update.from).collect();
+    update_origins.sort_unstable();
+    assert_eq!(update_origins, vec![before[1].from, before[2].from]);
+    for update in updates {
+        assert!(!update.contents.is_empty(), "{update:?}");
+    }
+    // Sanity: the tags really did change.
+    assert_eq!(tag_lines(&before[1].contents), vec![3]);
+    assert_eq!(tag_lines(&after[1].contents), vec![4]);
 }
 
 #[test]
