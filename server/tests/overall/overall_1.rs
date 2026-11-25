@@ -101,7 +101,7 @@ async fn test_server_core(
     let doc_block_contents = driver.query(By::Css(contents_css)).first().await.unwrap();
     assert_eq!(
         doc_block_contents.inner_html().await.unwrap(),
-        "<p>Test</p>"
+        "<p><l-n>1</l-n>Test</p>"
     );
 
     // Focus it.
@@ -346,7 +346,7 @@ async fn test_server_core(
     let doc_block_contents = driver.query(By::Css(contents_css)).first().await.unwrap();
     assert_eq!(
         doc_block_contents.inner_html().await.unwrap(),
-        "<p>Testfood</p>"
+        "<p><l-n>1</l-n>Testfood</p>"
     );
     let code_line = driver.query(By::Css(code_line_css)).first().await.unwrap();
     assert_eq!(code_line.inner_html().await.unwrap(), "code()bark");
@@ -413,7 +413,7 @@ async fn test_server_core(
     let body_content = driver.query(By::Css(DOC_BLOCK_CSS)).first().await.unwrap();
     assert_eq!(
         body_content.inner_html().await.unwrap(),
-        "<p>A <strong>markdown</strong> file.</p>"
+        "<p><l-n>1</l-n>A <strong>markdown</strong> file.</p>"
     );
 
     // Perform edits.
@@ -487,7 +487,7 @@ async fn test_server_core(
     );
     assert_eq!(
         body_content.inner_html().await.unwrap(),
-        "<p>food A <strong>markdown</strong> file.</p>"
+        "<p><l-n>1</l-n>food A <strong>markdown</strong> file.</p>"
     );
 
     // Wait for a cursor update produced by the edit.

@@ -131,7 +131,7 @@ continues here.
 renders (after minification) as:
 
 ```html
-<h1><l-n>1</l-n>Title</h1><p><l-n>3</l-n>Some <em>text</em> <l-n>4</l-n>continues here.<ul><li><l-n>6</l-n><input disabled type=checkbox>A task</ul>
+<h1><l-n>1</l-n>Title</h1><p><l-n>3</l-n>Some <em>text</em> <l-n>4</l-n>continues here.<ul><li><l-n>6</l-n><input disabled type=checkbox> A task</ul>
 ```
 
 <h3 id="cc-4KkOVSDENA">Exceptions</h3>
@@ -191,6 +191,7 @@ tags or attribute false positives from leaking across doc-block boundaries).*
   hydration, with adjacent text nodes merged
   (<xref ref="cc-e7tpKZV9sK"></xref>).
 
+<h3 id="cc-fWDWpSp7n2" data-gather="cc-f9V6VecYSP cc-CJIPQ2ftG9 cc-YPPU9sUNNZ">Implementation of Placement</h3>
 
 <h2 id="cc-dl60mkSR4A">Source line offsets</h2>
 
@@ -263,6 +264,7 @@ occupies six source lines. `First` has source-line offset `1` and `Second`
 has offset `4`, so their tags are `2` and `5` regardless of which blank lines
 the lexer retains in the contents.
 
+<h3 id="cc-675iCUV0TK" data-gather="cc-2RR1Hkiqvd cc-Pgf8BNFlSN cc-QAaRjE3zO2">Implementation of Source line offsets</h3>
 
 <h2 id="cc-e7tpKZV9sK">Sanitization & hydration</h2>
 

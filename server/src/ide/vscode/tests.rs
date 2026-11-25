@@ -561,7 +561,7 @@ async fn test_vscode_ide_websocket8() {
                             to: 1,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: "<p>testing".to_string()
+                            contents: "<p><l-n>1</l-n>testing".to_string()
                         }],
                     }),
                     version: 0.0,
@@ -694,7 +694,7 @@ async fn test_vscode_ide_websocket7() {
                             to: 1,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: "<p>more".to_string()
+                            contents: "<p><l-n>1</l-n>more".to_string()
                         }]
                     }),
                     version: 0.0,
@@ -774,7 +774,7 @@ async fn test_vscode_ide_websocket7() {
                             to: 7,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: "<p>most".to_string(),
+                            contents: "<p><l-n>3</l-n>most".to_string(),
                         },),],
                         version: 0.0,
                     }),
@@ -1010,7 +1010,7 @@ async fn test_vscode_ide_websocket13() {
                             to: 7,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: "<p>most".to_string(),
+                            contents: "<p><l-n>3</l-n>most".to_string(),
                         })],
                         version: 0.0,
                     }),
@@ -1087,7 +1087,7 @@ async fn test_vscode_ide_websocket13() {
                             to: 1,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: "<p>newest".to_string(),
+                            contents: "<p><l-n>1</l-n>newest".to_string(),
                         }],
                     }),
                     version: 5.0,
@@ -1309,7 +1309,7 @@ async fn test_vscode_ide_websocket4() {
                             to: 1,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: "<p>test.py".to_string()
+                            contents: "<p><l-n>1</l-n>test.py".to_string()
                         }],
                     }),
                     version: cast!(&msg.message, EditorMessageContents::Update)
@@ -1863,7 +1863,7 @@ async fn test_vscode_ide_websocket10() {
                             to: 1,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: r#"<p>See <xref contenteditable=false data-content ref=foo><span class=cc-error>id "foo" not found</span></xref>."#.to_string(),
+                            contents: r#"<p><l-n>1</l-n>See <xref contenteditable=false data-content ref=foo><span class=cc-error>id "foo" not found</span></xref>."#.to_string(),
                         }],
                     }),
                     version: 0.0,
@@ -1926,8 +1926,8 @@ async fn test_vscode_ide_websocket10() {
                                 delimiter: None,
                                 contents: vec![StringDiff {
                                     from: 0,
-                                    to: Some(110),
-                                    insert: "<p>See <xref contenteditable=false data-content ref=foo><a href=toc.md#foo>Foo</a></xref>.".to_string(),
+                                    to: Some(122),
+                                    insert: "<p><l-n>1</l-n>See <xref contenteditable=false data-content ref=foo><a href=toc.md#foo>Foo</a></xref>.".to_string(),
                                 }],
                             }
                         )],
