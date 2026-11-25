@@ -27,8 +27,11 @@
 //! start the Server (and so install its logger). Therefore, this test lives in
 //! its own test executable, which owns the logger. It's a single test, so
 //! nothing else logs concurrently.
-//!
-//! ### Standard library
+
+// Imports
+// -------
+//
+// ### Standard library
 use std::{
     path::Path,
     sync::{Mutex, Once},

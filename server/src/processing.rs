@@ -2278,8 +2278,9 @@ fn hydrate_dom(
     is_markdown: bool,
     // The parsed, patched DOM plus the walk results needed by later phases.
 ) -> io::Result<(Rc<Node>, WalkContext)> {
-    // Hydration's replacements and the cache's captured content require these
-    // elements to hold no tags, so this comes before everything else.
+    // Remove line number tags inside literal-text containers and `<xref>`s
+    // first: hydration's replacements and the cache's captured content require
+    // them to hold no tags.
     remove_inner_line_number_tags(&dom);
     // Everything below treats a `<fragment>` as empty, so this comes next.
     hoist_fragment_content(&dom);

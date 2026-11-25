@@ -3989,7 +3989,6 @@ fn test_line_number_tags_diff_amplification() {
     assert_eq!(before.len(), 3);
     assert_eq!(after.len(), 3);
     let transactions = diff_code_mirror_doc_blocks(&before, &after);
-    // The first doc block precedes the insertion: no transaction.
     let updates: Vec<_> = transactions
         .iter()
         .map(|transaction| {
@@ -3999,8 +3998,10 @@ fn test_line_number_tags_diff_amplification() {
             update
         })
         .collect();
+    // The first doc block precedes the insertion: no transaction.
     assert_eq!(updates.len(), 2, "{transactions:?}");
     // Each later block has a non-empty `contents` diff.
+    //
     // Updates aren't ordered by position, so look them up by the block's
     // original position.
     let mut update_origins: Vec<_> = updates.iter().map(|update| update.from).collect();
@@ -4088,6 +4089,9 @@ fn assert_hydrated_without_inner_tags(
     container_end: &str,
     // The expected hydrated doc block, without line number tags.
     expected: &str,
+    // The id of a target or fragment which the cache must hold, if any; the
+    // source must define it. Without one, the cache check below is vacuous.
+    cache_id: Option<&str>,
 ) {
     let cache = Arc::new(Mutex::new(Cache::default()));
     let translation =
@@ -4106,6 +4110,15 @@ fn assert_hydrated_without_inner_tags(
     assert_eq!(strip_line_number_tags(contents), expected, "{source:?}");
     // The cache must hold no inner tags either.
     let cache_guard = cache.lock().unwrap();
+    if let Some(id) = cache_id {
+        assert!(
+            cache_guard
+                .files
+                .values()
+                .any(|file| file.targets.contains_key(id) || file.fragments.contains_key(id)),
+            "{source:?}: the cache holds no `{id}`."
+        );
+    }
     for file in cache_guard.files.values() {
         for target in file.targets.values() {
             assert!(!target.inner_html.contains("<l-n"), "{source:?}");
@@ -4116,46 +4129,100 @@ fn assert_hydrated_without_inner_tags(
     }
 }
 
-// Verify that tags placed inside multi-line math and diagrams are removed
-// before hydration, which requires a single text child, while the tag before
-// the content remains.
+// Verify that tags placed inside multi-line math are removed before
+// hydration, which requires a single text child. (A math `<span>` with an `id`
+// isn't hydrated, so the target case puts the id on a wrapper.)
 #[test]
-fn test_hydrate_line_number_tags_in_literal_containers() {
+fn test_hydrate_line_number_tags_in_math() {
     assert_hydrated_without_inner_tags(
         "// A <span class=\"math math-inline\">x\n// y</span>.\n",
         "<span",
         "</span>",
         "<p>A <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x y\\)</span>.",
+        None,
     );
     assert_hydrated_without_inner_tags(
         "// A <span class=\"math math-display\">x\n// y</span>.\n",
         "<span",
         "</span>",
         "<p>A <span class=\"math math-display mceNonEditable\" contenteditable=false>$$x y$$</span>.",
+        None,
+    );
+    // A target containing math: the cache must hold it, without tags.
+    assert_hydrated_without_inner_tags(
+        "// A <b id=\"cc-BvpEVGqHOi\"><span class=\"math math-inline\">x\n// y</span></b>.\n",
+        "<span",
+        "</span>",
+        "<p>A <b id=cc-BvpEVGqHOi><span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x y\\)</span></b>.",
+        Some("cc-BvpEVGqHOi"),
+    );
+}
+
+// Verify that tags placed inside `<pre>` and `<code>` are removed, which
+// exercises those branches of the pre-pass. An inline `<pre>` or `<code>`
+// mid-paragraph gets a tag after its newline.
+#[test]
+fn test_hydrate_line_number_tags_in_pre_and_code() {
+    assert_hydrated_without_inner_tags(
+        "// A <pre id=\"cc-xvEXpJ6CNL\">x\n// y</pre> z\n",
+        "<pre",
+        "</pre>",
+        "<p>A<pre id=cc-xvEXpJ6CNL>x\ny</pre> z<p>",
+        Some("cc-xvEXpJ6CNL"),
     );
     assert_hydrated_without_inner_tags(
-        "// <pre><code class=\"language-mermaid\">graph TD\n// A-->B\n// </code></pre>\n",
-        "<wc-mermaid",
-        "</wc-mermaid>",
-        "<wc-mermaid>graph TD\nA-->B\n</wc-mermaid>",
+        "// A <code id=\"cc-1PHAgGQilp\">x\n// y</code> z\n",
+        "<code",
+        "</code>",
+        "<p>A <code id=cc-1PHAgGQilp>x\ny</code> z",
+        Some("cc-1PHAgGQilp"),
     );
     assert_hydrated_without_inner_tags(
-        "// <pre><code class=\"language-graphviz\">digraph {\n// a->b\n// }</code></pre>\n",
-        "<graphviz-graph",
-        "</graphviz-graph>",
-        "<graphviz-graph>digraph {\na->b\n}</graphviz-graph>",
+        "// A <code>x\n// y</code> z\n",
+        "<code",
+        "</code>",
+        "<p>A <code>x\ny</code> z",
+        None,
     );
+}
+
+// Verify that tags placed inside hand-written `wc-mermaid` and
+// `graphviz-graph` elements are removed before hydration.
+#[test]
+fn test_hydrate_line_number_tags_in_diagram_elements() {
     assert_hydrated_without_inner_tags(
         "// <wc-mermaid>graph TD\n// A-->B</wc-mermaid>\n",
         "<wc-mermaid",
         "</wc-mermaid>",
         "<p><wc-mermaid>graph TD\nA-->B</wc-mermaid>",
+        None,
     );
     assert_hydrated_without_inner_tags(
         "// <graphviz-graph>digraph {\n// a->b\n// }</graphviz-graph>\n",
         "<graphviz-graph",
         "</graphviz-graph>",
         "<p><graphviz-graph>digraph {\na->b\n}</graphviz-graph>",
+        None,
+    );
+}
+
+// Hydration regressions only: a `<pre` line opens an HTML block, which gets
+// no tags, so these pass without the pre-pass.
+#[test]
+fn test_hydrate_fenced_diagrams_without_tags() {
+    assert_hydrated_without_inner_tags(
+        "// <pre><code class=\"language-mermaid\">graph TD\n// A-->B\n// </code></pre>\n",
+        "<wc-mermaid",
+        "</wc-mermaid>",
+        "<wc-mermaid>graph TD\nA-->B\n</wc-mermaid>",
+        None,
+    );
+    assert_hydrated_without_inner_tags(
+        "// <pre><code class=\"language-graphviz\">digraph {\n// a->b\n// }</code></pre>\n",
+        "<graphviz-graph",
+        "</graphviz-graph>",
+        "<graphviz-graph>digraph {\na->b\n}</graphviz-graph>",
+        None,
     );
 }
 
