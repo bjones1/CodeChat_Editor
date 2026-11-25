@@ -31,6 +31,7 @@ use std::{
 };
 
 // ### Third-party
+use html5ever::{Namespace, ns};
 use indoc::{formatdoc, indoc};
 use markup5ever_rcdom::{Node, NodeData};
 use predicates::prelude::predicate::str;
@@ -40,7 +41,8 @@ use regex::Regex;
 // ### Local
 use super::{
     AMMONIA_OPTIONS, CLEAN_FRAGMENT_HTML, CLEAN_LINK_CONTENT_HTML, CodeChatForWeb, CodeMirror,
-    CodeMirrorDocBlock, SourceFileMetadata, StringDiff, find_path_to_toc,
+    CodeMirrorDocBlock, SourceFileMetadata, StringDiff, find_path_to_toc, get_dom_root,
+    get_node_tag_name, minify, remove_line_number_tags, strip_line_number_tags,
 };
 use crate::{
     lexer::{
@@ -3096,6 +3098,7 @@ fn test_dehydrate_named_anchor() {
 
 fn dehydrate_html(html: &str) -> io::Result<Rc<Node>> {
     let tree = html_to_dom(html, None)?;
+    remove_line_number_tags(&tree);
     dehydrating_walk_node(&tree)?;
     Ok(tree)
 }
@@ -3256,5 +3259,292 @@ fn test_dehydrate_html_1() {
             <p><br></p>
             "
         )
+    );
+}
+
+// ### Line number tag removal and sanitization tests
+//
+// These use hand-written tagged HTML, as the Server would produce per
+// <xref ref="cc-e7tpKZV9sK"></xref>, or as TinyMCE could leave behind after a
+// paste.
+
+/// Return the Markdown produced by dehydrating `html`.
+fn dehydrated_markdown(html: &str) -> String {
+    let html_to_markdown = new_html_to_markdown();
+    HtmlToMarkdownWrapped::new(&html_to_markdown)
+        .convert(&dehydrate_html(html).unwrap())
+        .unwrap()
+}
+
+/// Return the namespace of each `<l-n>` element in `node`, including inside
+/// `<template>` contents.
+fn line_number_tag_namespaces(node: &Rc<Node>) -> Vec<Namespace> {
+    let mut namespaces = vec![];
+    if let NodeData::Element {
+        name,
+        template_contents,
+        ..
+    } = &node.data
+    {
+        if &*name.local == "l-n" {
+            namespaces.push(name.ns.clone());
+        }
+        if let Some(contents) = template_contents.borrow().as_ref() {
+            namespaces.extend(line_number_tag_namespaces(contents));
+        }
+    }
+    for child in node.children.borrow().iter() {
+        namespaces.extend(line_number_tag_namespaces(child));
+    }
+    namespaces
+}
+
+#[test]
+fn test_strip_line_number_tags() {
+    assert_eq!(
+        strip_line_number_tags("<h1><l-n>1</l-n>Title</h1><p><l-n>3</l-n>a <l-n>14</l-n>b"),
+        "<h1>Title</h1><p>a b"
+    );
+    // Only well-formed tags are removed.
+    assert_eq!(
+        strip_line_number_tags("<p><l-n></l-n>a<l-n>x</l-n>"),
+        "<p><l-n></l-n>a<l-n>x</l-n>"
+    );
+    assert_eq!(strip_line_number_tags("<p>no tags"), "<p>no tags");
+}
+
+#[test]
+fn test_line_number_tags_sanitize() {
+    // `minify` (through `AMMONIA_OPTIONS`) keeps each tag and collapses the
+    // whitespace next to it to one space.
+    assert_eq!(
+        minify("<p>a <em>b</em>\n<l-n>2</l-n>c</p>").unwrap(),
+        "<p>a <em>b</em> <l-n>2</l-n>c"
+    );
+    assert_eq!(
+        AMMONIA_OPTIONS.clean("<p><l-n>2</l-n>a</p>").to_string(),
+        "<p><l-n>2</l-n>a</p>"
+    );
+    // Stored target and fragment content holds no tags or their digits.
+    assert_eq!(
+        CLEAN_LINK_CONTENT_HTML
+            .clean("a\n<l-n>2</l-n>b <em><l-n>3</l-n>c</em>")
+            .to_string(),
+        "a\nb <em>c</em>"
+    );
+    assert_eq!(
+        CLEAN_FRAGMENT_HTML
+            .clean("<p>a\n<l-n>2</l-n>b</p>")
+            .to_string(),
+        "<p>a\nb</p>"
+    );
+}
+
+// Removing a tag merges the text on either side of it into one node.
+#[test]
+fn test_remove_line_number_tags_merges_text() {
+    let tree = html_to_dom("<p>a\n<l-n>2</l-n>b <l-n>3</l-n>c<l-n>4</l-n></p>", None).unwrap();
+    remove_line_number_tags(&tree);
+    let p = get_dom_root(&tree).children.borrow()[0].clone();
+    let p_children = p.children.borrow();
+    assert_eq!(p_children.len(), 1);
+    let NodeData::Text { contents } = &p_children[0].data else {
+        panic!("Expected a text node.");
+    };
+    assert_eq!(&**contents.borrow(), "a\nb c");
+}
+
+// Markdown from tagged HTML equals Markdown from the same HTML with its tags
+// deleted, including for text after a removed tag which Markdown would treat
+// as syntax at the start of a line.
+#[test]
+fn test_remove_line_number_tags_markdown() {
+    // Long enough that the word wrapper places the text after the tag at the
+    // start of a line.
+    let filler = "word ".repeat(15);
+    for (tagged, untagged) in [
+        // Text after a tag which looks like Markdown syntax.
+        (
+            format!("<p><l-n>1</l-n>{filler}\n<l-n>2</l-n>2) b</p>"),
+            format!("<p>{filler}\n2) b</p>"),
+        ),
+        (
+            format!("<p><l-n>1</l-n>{filler}\n<l-n>2</l-n># b</p>"),
+            format!("<p>{filler}\n# b</p>"),
+        ),
+        (
+            format!("<p><l-n>1</l-n>{filler}\n<l-n>2</l-n>+ b</p>"),
+            format!("<p>{filler}\n+ b</p>"),
+        ),
+        (
+            format!("<p><l-n>1</l-n>{filler}\n<l-n>2</l-n>&gt; b</p>"),
+            format!("<p>{filler}\n&gt; b</p>"),
+        ),
+        (
+            format!("<p><l-n>1</l-n>{filler}\n<l-n>2</l-n>    b</p>"),
+            format!("<p>{filler}\n    b</p>"),
+        ),
+        (
+            "<p>a<l-n>2</l-n>2) b</p>".to_string(),
+            "<p>a2) b</p>".to_string(),
+        ),
+        // Break whitespace stays outside the tag.
+        (
+            "<p><l-n>1</l-n>a <em>b</em>\n<l-n>2</l-n>c<br>\n<l-n>3</l-n>d</p>".to_string(),
+            "<p>a <em>b</em>\nc<br>\nd</p>".to_string(),
+        ),
+        (
+            "<h1><l-n>1</l-n>Title</h1><ul><li><l-n>3</l-n><input disabled type=checkbox>A task</li></ul>".to_string(),
+            "<h1>Title</h1><ul><li><input disabled type=checkbox>A task</li></ul>".to_string(),
+        ),
+        // Malformed, out-of-order, duplicated, and pasted tags.
+        (
+            "<p><l-n>5</l-n>a <l-n>2</l-n>b <l-n>2</l-n>c <l-n>x</l-n>d <l-n></l-n>e <l-n><b>7</b></l-n>f</p>".to_string(),
+            "<p>a b c d e f</p>".to_string(),
+        ),
+        // A stray tag inside an element which `dehydrating_walk_node` replaces
+        // must not prevent the replacement.
+        (
+            "<wc-mermaid>flowchart LR\n<l-n>2</l-n>    start --&gt; stop\n</wc-mermaid>".to_string(),
+            "<wc-mermaid>flowchart LR\n    start --&gt; stop\n</wc-mermaid>".to_string(),
+        ),
+        (
+            "<graphviz-graph>digraph {\n<l-n>2</l-n>    start -&gt; stop\n}\n</graphviz-graph>".to_string(),
+            "<graphviz-graph>digraph {\n    start -&gt; stop\n}\n</graphviz-graph>".to_string(),
+        ),
+        (
+            "<pre><code class=\"language-text\">a<br><l-n>2</l-n>b<br></code></pre>".to_string(),
+            "<pre><code class=\"language-text\">a<br>b<br></code></pre>".to_string(),
+        ),
+        (
+            "<p><l-n>1</l-n>x <span class=\"math math-inline mceNonEditable\" contenteditable=\"false\">\\(a\n<l-n>2</l-n>b\\)</span></p>".to_string(),
+            "<p>x <span class=\"math math-inline mceNonEditable\" contenteditable=\"false\">\\(a\nb\\)</span></p>".to_string(),
+        ),
+        (
+            "<p><span class=\"math math-display mceNonEditable\" contenteditable=\"false\">$$a\n<l-n>2</l-n>b$$</span></p>".to_string(),
+            "<p><span class=\"math math-display mceNonEditable\" contenteditable=\"false\">$$a\nb$$</span></p>".to_string(),
+        ),
+    ] {
+        let tagged_markdown = dehydrated_markdown(&tagged);
+        assert_eq!(tagged_markdown, dehydrated_markdown(&untagged), "{tagged}");
+        assert!(!tagged_markdown.contains("l-n"), "{tagged_markdown}");
+    }
+
+    // Spot-check that the replacements above happened.
+    assert_eq!(
+        dehydrated_markdown(
+            "<wc-mermaid>flowchart LR\n<l-n>2</l-n>    start --&gt; stop\n</wc-mermaid>"
+        ),
+        "```mermaid\nflowchart LR\n    start --> stop\n```\n"
+    );
+    assert_eq!(
+        dehydrated_markdown(
+            "<pre><code class=\"language-text\">a<br><l-n>2</l-n>b<br></code></pre>"
+        ),
+        "```text\na\nb\n```\n"
+    );
+    assert_eq!(
+        dehydrated_markdown(
+            "<p><span class=\"math math-inline mceNonEditable\" contenteditable=\"false\">\\(a<l-n>2</l-n>b\\)</span></p>"
+        ),
+        "$ab$\n"
+    );
+}
+
+// Tags are removed in foreign (SVG and MathML) content and in `<template>`
+// contents.
+#[test]
+fn test_remove_line_number_tags_foreign_and_template() {
+    let tree = html_to_dom(
+        "<p><l-n>1</l-n>a</p><svg><l-n>2</l-n><text>t</text></svg><math><mi>x</mi><l-n>3</l-n></math><template><p>b\n<l-n>4</l-n>c</p></template>",
+        None,
+    )
+    .unwrap();
+    // Verify that the parser placed these tags where this test expects.
+    assert_eq!(
+        line_number_tag_namespaces(&tree),
+        vec![ns!(html), ns!(svg), ns!(mathml), ns!(html)]
+    );
+    remove_line_number_tags(&tree);
+    assert_eq!(line_number_tag_namespaces(&tree), Vec::<Namespace>::new());
+    // The serializer omits `<template>` contents, so check them separately.
+    assert_eq!(
+        dom_to_html(&tree).unwrap(),
+        "<p>a</p><svg><text>t</text></svg><math><mi>x</mi></math><template></template>"
+    );
+    let template = get_dom_root(&tree).children.borrow()[3].clone();
+    let NodeData::Element {
+        template_contents, ..
+    } = &template.data
+    else {
+        panic!("Expected an element.");
+    };
+    let template_p = template_contents
+        .borrow()
+        .as_ref()
+        .unwrap()
+        .children
+        .borrow()[0]
+        .clone();
+    assert_eq!(get_node_tag_name(&template_p), Some("p"));
+    let template_p_children = template_p.children.borrow();
+    assert_eq!(template_p_children.len(), 1);
+    let NodeData::Text { contents } = &template_p_children[0].data else {
+        panic!("Expected a text node.");
+    };
+    assert_eq!(&**contents.borrow(), "b\nc");
+}
+
+// When `html_to_dom` places the cursor marker inside a tag, the marker is kept
+// immediately before the text which followed the tag.
+#[test]
+fn test_remove_line_number_tags_cursor_marker() {
+    for (html, dom_location) in [
+        // The marker is inside the tag's text.
+        ("<p>a\n<l-n>2</l-n>b</p>", (vec![0, 1, 0], 0)),
+        ("<p>a\n<l-n>2</l-n>b</p>", (vec![0, 1, 0], 1)),
+        // The marker is deeper inside a pasted, malformed tag.
+        ("<p>a\n<l-n><b>2</b></l-n>b</p>", (vec![0, 1, 0, 0], 1)),
+    ] {
+        assert_eq!(
+            doc_block_html_to_markdown(vec![build_doc_block("", "", html)], Some(&dom_location))
+                .unwrap(),
+            vec![build_doc_block(
+                "",
+                "",
+                &format!("a {UNICODE_CURSOR_MARKER}b\n")
+            )],
+            "{html}"
+        );
+    }
+}
+
+// Both paths of `codechat_for_web_to_source` remove tags.
+#[test]
+fn test_codechat_for_web_to_source_line_number_tags() {
+    let codechat_for_web = build_codechat_for_web(
+        MARKDOWN_MODE,
+        "<h1><l-n>1</l-n>Title</h1><p><l-n>3</l-n>a <em>b</em>\n<l-n>4</l-n>2) c</p>",
+        vec![],
+    );
+    assert_eq!(
+        cast!(codechat_for_web_to_source(&codechat_for_web), Ok),
+        "Title\n=====\n\na *b* 2) c\n"
+    );
+
+    let codechat_for_web = build_codechat_for_web(
+        "python",
+        "\nx = 1\n",
+        vec![build_codemirror_doc_block(
+            0,
+            1,
+            "",
+            "#",
+            "<p><l-n>1</l-n>a\n<l-n>2</l-n>b</p>",
+        )],
+    );
+    assert_eq!(
+        cast!(codechat_for_web_to_source(&codechat_for_web), Ok),
+        "# a b\nx = 1\n"
     );
 }

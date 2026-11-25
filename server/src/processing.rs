@@ -498,6 +498,7 @@ pub fn codechat_for_web_to_source(
         let html_to_markdown = new_html_to_markdown();
         let converter = HtmlToMarkdownWrapped::new(&html_to_markdown);
         let tree = html_to_dom(&code_mirror.doc, None)?;
+        remove_line_number_tags(&tree);
         dehydrating_walk_node(&tree)?;
         return converter
             .convert(&tree)
@@ -737,6 +738,7 @@ pub fn doc_block_html_to_markdown(
         if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
             last_doc_block_index = Some(index);
             let tree = html_to_dom(&doc_block.contents, dom_location)?;
+            remove_line_number_tags(&tree);
             dehydrating_walk_node(&tree)?;
 
             // Calculate the total delimiter width: the delimiter width plus the
@@ -1209,7 +1211,10 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
     let mut b = Builder::default();
     // Add custom tags produced during hydration, plus `input` (task list
     // checkboxes produced by pulldown-cmark) and `iframe` (embedded media
-    // inserted via TinyMCE), neither of which Ammonia allows by default.
+    // inserted via TinyMCE), neither of which Ammonia allows by default. Line
+    // number tags must be kept, not unwrapped: unwrapping turns
+    // `a\n<l-n>2</l-n>b` into the text `a 2b`. See
+    // <xref ref="cc-e7tpKZV9sK"></xref>.
     b.add_tags(&[
         "wc-mermaid",
         "graphviz-graph",
@@ -1217,6 +1222,7 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
         "fragment",
         "input",
         "iframe",
+        "l-n",
     ])
     // Allow any element to be assigned an ID and to be a gather element.
     .add_generic_attributes(&["id", "data-gather"])
@@ -1298,8 +1304,9 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
 // are needed by `<ruby>`; Ammonia can't limit them to that parent, so a stray
 // one remains. Most disallowed tags are stripped but their content is kept,
 // which unwraps a nested `<xref>` to its own optional content. A `<fragment>`,
-// `<script>`, or `<style>` is removed along with its content; so is `<svg>` or
-// `<math>`, which Ammonia drops entirely since it's not in the HTML namespace.
+// `<l-n>` line number tag, `<script>`, or `<style>` is removed along with its
+// content; so is `<svg>` or `<math>`, which Ammonia drops entirely since it's
+// not in the HTML namespace.
 // `id` and `data-gather` attributes are stripped because they aren't in the
 // allowlist, so this HTML never defines a target or gather element, nor
 // duplicates an id when rendered in another file. `contenteditable` isn't in
@@ -1314,7 +1321,7 @@ static CLEAN_LINK_CONTENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
         "ins", "kbd", "mark", "q", "rp", "rt", "ruby", "s", "samp", "small", "span", "strong",
         "sub", "sup", "time", "u", "var", "wbr",
     ]))
-    .add_clean_content_tags(&["fragment"])
+    .add_clean_content_tags(&["fragment", "l-n"])
     // Keep the math which `hydrate_link_content` hydrates after cleaning.
     .add_allowed_classes("span", &["math", "math-inline", "math-display"])
     .link_rel(None);
@@ -1329,7 +1336,10 @@ static CLEAN_LINK_CONTENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
 // `<fragment>` elements are removed *along with their contents* -- backlink
 // hydration is excluded from fragment content (see layer 4 under
 // <xref ref="cc-P-g5o100jN"></xref>), which is what keeps a gather element and
-// the fragments it lists from outdating each other forever. Each `<xref>` keeps
+// the fragments it lists from outdating each other forever. `<l-n>` line number
+// tags are likewise removed with their contents, so that inserting a line above
+// a fragment doesn't change its stored content; a rendered fragment instead
+// numbers its lines with `cc-line-number`. Each `<xref>` keeps
 // its `data-content`, from which a gather element re-hydrates its link; see
 // `hydrate_xrefs_within`. Only a `contenteditable` of `false` is kept: a
 // hand-written `true` could make part of a non-editable gather list editable,
@@ -1337,7 +1347,7 @@ static CLEAN_LINK_CONTENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
 static CLEAN_FRAGMENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
     let mut b = Builder::default();
     b.add_tags(&["wc-mermaid", "graphviz-graph", "xref", "input", "iframe"])
-        .add_clean_content_tags(&["fragment"])
+        .add_clean_content_tags(&["fragment", "l-n"])
         .add_allowed_classes(
             "span",
             &[
@@ -1386,6 +1396,23 @@ fn allow_phrasing_attributes(
 pub fn minify(html: &str) -> Result<String, FromUtf8Error> {
     let clean_html = AMMONIA_OPTIONS.clean(html).to_string();
     String::from_utf8(minify_html::minify(clean_html.as_bytes(), &MINIFY_OPTIONS))
+}
+
+// Matches one well-formed line number tag in minified HTML.
+static LINE_NUMBER_TAG: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new("<l-n>[0-9]+</l-n>").unwrap());
+
+/// Delete every `<l-n>N</l-n>` tag from minified HTML, so that a comparison
+/// ignores line numbers, which go stale whenever a line is inserted above them
+/// (see <xref ref="cc-qSbTxGyL2n"></xref>). Tests also use this to compare HTML
+/// whose line numbers don't matter.
+/// <fragment id="cc-TRSJgb1Wta"></fragment>
+pub(crate) fn strip_line_number_tags(
+    // Minified HTML, which contains no whitespace or attributes inside a tag.
+    html: &str,
+    // The HTML with its line number tags removed.
+) -> Cow<'_, str> {
+    LINE_NUMBER_TAG.replace_all(html, "")
 }
 
 // Compute the length of the provided string in UTF16 characters.
@@ -3075,6 +3102,105 @@ pub fn remove_tinymce_data(
         });
     }
     Some(node.clone())
+}
+
+/// Remove every `<l-n>` line number tag, with its contents, from a DOM before
+/// dehydration, per <xref ref="cc-e7tpKZV9sK"></xref>. This must be a separate
+/// pass: `dehydrating_walk_node` doesn't descend into the nodes it replaces,
+/// and a stray tag would prevent those replacements, which require a single
+/// text child or only text and `<br>` children. Tags are matched by local name
+/// in any namespace, since one pasted inside `<svg>` or `<math>` is parsed as a
+/// foreign element, and inside `<template>` contents, which aren't children of
+/// the `<template>` element.
+///
+/// After removing a tag, merge the text nodes on either side of it, so that
+/// `htmd` sees the same tree as for HTML which never contained the tag. Since
+/// `htmd` escapes text based on its position within a text node, unmerged
+/// text such as `2) b` would be escaped as if it began a line. If
+/// `html_to_dom` placed the cursor marker inside a removed tag, keep the
+/// marker as text in the tag's place.
+/// <fragment id="cc-4AJLIwQ1g7"></fragment>
+fn remove_line_number_tags(
+    // The node whose descendants are searched for tags.
+    node: &Rc<Node>,
+) {
+    if let NodeData::Element {
+        template_contents, ..
+    } = &node.data
+        && let Some(contents) = template_contents.borrow().as_ref()
+    {
+        remove_line_number_tags(contents);
+    }
+
+    let mut index = 0;
+    while index < node.children.borrow().len() {
+        let child = node.children.borrow()[index].clone();
+        if !matches!(&child.data, NodeData::Element { name, .. } if &*name.local == "l-n") {
+            remove_line_number_tags(&child);
+            index += 1;
+            continue;
+        }
+
+        let mut children = node.children.borrow_mut();
+        child.parent.set(None);
+        if contains_text(&child, UNICODE_CURSOR_MARKER) {
+            let marker = Node::new(NodeData::Text {
+                contents: RefCell::new(UNICODE_CURSOR_MARKER.to_string().into()),
+            });
+            marker.parent.set(Some(Rc::downgrade(node)));
+            children[index] = marker;
+            merge_with_next_text(&mut children, index);
+            // The marker, now merged with any following text, needs no walk;
+            // resume after it.
+            if !(index > 0 && merge_with_next_text(&mut children, index - 1)) {
+                index += 1;
+            }
+        } else {
+            children.remove(index);
+            // Whether or not the neighbors merge, the next unwalked node is now
+            // at `index`.
+            if index > 0 {
+                merge_with_next_text(&mut children, index - 1);
+            }
+        }
+    }
+}
+
+/// If the nodes at `index` and `index + 1` are both text, append the second's
+/// text to the first, then remove the second.
+fn merge_with_next_text(
+    // The children of one node.
+    children: &mut Vec<Rc<Node>>,
+    // The index of the first node to merge.
+    index: usize,
+    // True if the nodes were merged.
+) -> bool {
+    if let Some([first, second]) = children.get(index..index + 2)
+        && let NodeData::Text { contents: first } = &first.data
+        && let NodeData::Text { contents: second } = &second.data
+    {
+        first.borrow_mut().push_tendril(&second.borrow());
+        children.remove(index + 1);
+        true
+    } else {
+        false
+    }
+}
+
+/// Return true if any descendant text node of `node` contains `c`.
+fn contains_text(
+    // The node whose descendants are searched.
+    node: &Rc<Node>,
+    // The character to find.
+    c: char,
+) -> bool {
+    node.children
+        .borrow()
+        .iter()
+        .any(|child| match &child.data {
+            NodeData::Text { contents } => contents.borrow().contains(c),
+            _ => contains_text(child, c),
+        })
 }
 
 /// Walk a node, dehydrating it by removing TinyMCE temporary attributes,

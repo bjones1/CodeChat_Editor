@@ -58,7 +58,7 @@ use crate::{
         },
         codechat_for_web_to_source, diff_code_mirror_doc_blocks, diff_str,
         doc_block_html_to_markdown, find_path_to_toc, minify, project_cache, remove_tinymce_data,
-        source_to_codechat_for_web_string, transform_html,
+        source_to_codechat_for_web_string, strip_line_number_tags, transform_html,
     },
     queue_send, queue_send_func,
     webserver::{
@@ -1796,6 +1796,12 @@ fn compare_html(
     if let Ok(raw_html) = transform_html(raw_html, compare_html_walker)
         && let Ok(raw_html) = minify(&raw_html)
     {
+        // Line numbers alone shouldn't trigger a re-translation: they go stale
+        // after a Client edit, and a line typed in the Client has none. Strip
+        // them before the normalizations below, which match text that a tag
+        // could otherwise separate.
+        let normalized_html = strip_line_number_tags(normalized_html);
+        let raw_html = strip_line_number_tags(&raw_html);
         // pulldown-cmark puts a newline after a `<br>`, which `minify` doesn't
         // remove but TinyMCE does.
         let normalized_html = normalized_html.replace("<br> ", "<br>");
@@ -1858,7 +1864,7 @@ mod tests {
     use crate::{
         capture::{CaptureContext, CaptureEventType, CaptureEventWire, capture_control_only},
         processing::{CodeMirrorDiffable, CodeMirrorDocBlock, source_to_codechat_for_web},
-        translation::doc_blocks_compare,
+        translation::{compare_html, doc_blocks_compare},
     };
 
     /// Minimal test helper for feeding lifecycle/control messages into the
@@ -2048,5 +2054,38 @@ mod tests {
             ..ide[0].clone()
         }];
         assert!(doc_blocks_compare(&ide, &client), "{}", ide[0].contents);
+    }
+
+    // Line number tags alone don't make HTML differ; see
+    // <xref ref="cc-qSbTxGyL2n"></xref>. The first argument is minified
+    // Server HTML; the second is Client HTML.
+    #[test]
+    fn test_compare_html_line_number_tags() {
+        // Only the tag numbers differ.
+        assert!(compare_html(
+            "<p><l-n>1</l-n>a <l-n>2</l-n>b",
+            "<p><l-n>3</l-n>a\n<l-n>4</l-n>b</p>"
+        ));
+        // A line typed in the Client has no tag.
+        assert!(compare_html(
+            "<p><l-n>1</l-n>a <l-n>2</l-n>b",
+            "<p><l-n>1</l-n>a\nb</p>"
+        ));
+        assert!(compare_html("<p>a b", "<p><l-n>1</l-n>a <l-n>2</l-n>b</p>"));
+        // A text change next to a tag.
+        assert!(!compare_html(
+            "<p><l-n>1</l-n>a <l-n>2</l-n>b",
+            "<p><l-n>1</l-n>a <l-n>3</l-n>c</p>"
+        ));
+        // A tag removed along with its line's text.
+        assert!(!compare_html(
+            "<p><l-n>1</l-n>a <l-n>2</l-n>b",
+            "<p><l-n>1</l-n>a</p>"
+        ));
+        // The `<br> ` normalization still applies next to a tag.
+        assert!(compare_html(
+            "<p><l-n>1</l-n>a<br> <l-n>2</l-n>b",
+            "<p><l-n>1</l-n>a<br><l-n>2</l-n>b</p>"
+        ));
     }
 }

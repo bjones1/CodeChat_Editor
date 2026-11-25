@@ -308,6 +308,8 @@ Hydration invariants:
 * **Fidelity:** After removing a tag, the pre-pass merges the text nodes on either side of it, so `htmd` sees the same DOM tree as for HTML without tags. Because break whitespace stays outside tags, the resulting Markdown is byte-identical. Pasted `<l-n>` DOM elements are stripped on save, while hand-written `<l-n>` tags in Markdown were escaped during translation and are preserved.
 * **Cursor marker:** `html_to_dom` injects `UNICODE_CURSOR_MARKER` before the pre-pass, so Client and Server node indices match. The marker rarely lands in an `l-n` (for example, through `html_to_dom`'s fallback to the last child, or a restored selection). When the pre-pass removes an `l-n` containing the marker in any descendant text, it leaves a text node containing only the marker in its place, which is then merged with adjacent text like any other. If the DOM path ends on an `l-n` element rather than a text node, `html_to_dom` inserts no marker, as it does today for any non-text node.
 
+<h4 id="cc-h2RGug0SiP" data-gather="cc-4AJLIwQ1g7">Implementation of Dehydration</h4>
+
 <h2 id="cc-qSbTxGyL2n">Re-translation &amp; diffs</h2>
 
 Line numbers shift when lines are added/removed above them or when save-time word wrapping reflows edits.
@@ -317,6 +319,8 @@ Line numbers shift when lines are added/removed above them or when save-time wor
   * *TODO:* If scroll sync proves inaccurate while editing in the Client, re-translate after a Client edit whenever the saved Markdown's line count changed.
 * **Diff amplification (source files only):** Inserting a line renumbers all later tags, so `diff_code_mirror_doc_blocks` emits a contents update for every later doc block. Without tags, only their positions change, and `DocBlockWidget.eq` (which ignores position) skips `updateDOM`. With tags, each later block resets its `innerHTML`, re-runs MathJax, re-creates Mermaid/GraphViz elements, and (if focused) calls TinyMCE `setContent`. Markdown documents are unaffected, since the Client already calls `setContent` on the whole document for every update.
   * *TODO:* If a source file with 50 doc blocks containing math takes more than 100 ms from an IDE line insert to the Client update, switch to block-relative line numbers plus a per-block start offset.
+
+<h3 id="cc-FaTzUELlSl" data-gather="cc-TRSJgb1Wta">Implementation of Re-translation &amp; diffs</h3>
 
 ### Consumers *(informative)*
 
@@ -390,7 +394,7 @@ Required cases:
   are removed on save; tags inside `<svg>` and `template_contents` are removed; for a
   `dom_location` inside a tag, `doc_block_html_to_markdown`'s output holds the
   marker immediately before the text that followed the tag
-  (`<p>a<l-n>2</l-n>b</p>` yields `a \u{E83B}b`); the pre-pass runs through both
+  (`<p>a\n<l-n>2</l-n>b</p>` yields `a \u{E83B}b`); the pre-pass runs through both
   `codechat_for_web_to_source` paths (Markdown document and source file); a stray tag inside `wc-mermaid`, a
   `<pre>` with `<br>`, and math is removed and the replacement still happens;
   text after a removed tag starting with `2) `, `#`, `+ `, `>`, or spaces
