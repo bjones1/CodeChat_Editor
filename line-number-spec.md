@@ -42,14 +42,15 @@ tag which closes it or the end of the doc block:
   `noscript`, `script`, `style`, `textarea`, `title`, `xmp`;
 * text a diagram reads as its source: `wc-mermaid`, `graphviz-graph`;
 * `xref`, whose content `hydrate_source_xref` copies into `data-content`,
-  which a save writes back unchanged.
+  which a save writes back unchanged; it may hold another `xref`.
 
-A marker there would become visible text, or be saved.
+A marker there would become visible text, or be saved. Inside one of these
+elements, a tag for another of them opens nothing.
 
 A line with no inline event of its own gets no marker: a blank line, a code
 fence, a setext underline, a thematic break, a table delimiter row, a link
 reference definition, or the second line of a multi-line inline code span,
-inline HTML tag or display math.
+inline math, inline HTML tag or display math.
 
 This is the prototype `add_line_comments` (book repo,
 `project_notes/md-ast-line-numbers`), with `<l-n>` in place of the HTML
@@ -65,7 +66,9 @@ All in `server/src/processing.rs` unless noted.
    come from the file, each with the file line of its first line. It inserts
    `InlineHtml("<l-n>N</l-n>")` events as described above. Text outside the
    ranges (the doc block separators) gets no marker; an empty list gives the
-   old output.
+   old output. `track_unmarked_element` reads the tags of inline HTML and of
+   HTML block lines from left to right to find which of the elements above is
+   open.
 2. Markdown documents pass one range, the whole input, starting at line 1.
 3. Source files: the loop which builds `doc_contents` records each doc
    block's range and first line, which is 1 plus the sum of
@@ -96,16 +99,17 @@ Client changes
   text.
 * `css/CodeChatEditor.css`: `l-n { display: none; }`, outside the cascade
   layer so no theme can show it. The TOC page loads this file too.
-* `tinymce-config.mts`, `handleLineMarkers`: a block holding only markers
-  gets the `<br data-mce-bogus="1">` TinyMCE gives an empty block. TinyMCE
-  counts the marker's number as content, so without this the block has no
-  height and is lost on save. Such a block appears when Enter splits a
-  paragraph just after its marker (`NewBlock` event) and when TinyMCE parses
-  contents (a parser node filter on `l-n`), since the parser removes the
-  `<br>` which ends a block it doesn't consider empty.
-* `tinymce-config.mts`, `handleLineMarkers`: remove markers from selection
-  contents (`GetContent` with `selection`), which TinyMCE puts on the
-  clipboard on copy or cut.
+* `tinymce-config.mts`, `handleLineMarkers`: when Enter splits a block just
+  after its marker (`NewBlock` event), move the marker to the second half,
+  which holds the text of its line, and give the first half the
+  `<br data-mce-bogus="1">` TinyMCE gives an empty block. TinyMCE counts the
+  marker's number as content, so otherwise the first half has no height once
+  saved, and Enter in an empty-looking list item adds an item instead of
+  leaving the list.
+* `tinymce-config.mts`, `handleLineMarkers`: remove markers from the HTML of
+  selection contents (`GetContent` with `selection` and format `html`), which
+  TinyMCE puts on the clipboard on copy or cut. The plain text already leaves
+  out hidden markers.
 * `CodeMirror-integration.mts`: the walk which puts the caret at the start of
   a doc block entered from above skips a marker, so the caret doesn't land in
   hidden text.
@@ -134,8 +138,8 @@ In `server/src/processing/tests.rs` (exact expected HTML) and
 | Table with an empty first cell; task list | One marker per row, in its first cell with content; marker before the checkbox |
 | Image whose alt text spans two lines, or holds `<script>`; link label spanning two lines | No marker in `alt`, and the line after the image is marked; marker for the label's second line inside the link text |
 | JavaScript file: 23 code lines, then two doc block lines, code, another doc block | Markers 24 and 25; the later block uses its file line |
-| `<xref>` to a heading in the same file, with text after a two-line one; gathered fragment | No marker in the link text, `data-content` or gathered copy; the text after the two-line `<xref>` is marked |
-| `<iframe` tag spanning two lines, then prose; `</iframe>` on a line of its own; an `<iframe>` line, a blank line, more text; `<wc-mermaid>` over three lines; a JavaScript doc block which leaves `<wc-mermaid>` open | No marker inside any of these elements; the text after each `<iframe>` is marked, as is the next doc block |
+| `<xref>` to a heading in the same file, with text after a two-line one, also one holding another `<xref>`, inline or in an HTML block; gathered fragment | No marker in the link text, `data-content` or gathered copy; the text after the two-line `<xref>` is marked |
+| `<iframe` tag spanning two lines, then prose; `</iframe>` on a line of its own; an `<iframe>` line, a blank line, more text; a line which closes one `<iframe>` and opens another; `<script>` or `<textarea>` whose text holds `<iframe`; a `<title_x>` line, which isn't `<title>`; `<wc-mermaid>` over three lines; a JavaScript doc block which leaves `<wc-mermaid>` open | No marker inside any of these elements; the text after each element is marked, as is the next doc block |
 | Save a translated file with markers (Markdown and JavaScript) | Source identical to the input |
 | `compare_html` on HTML that differs only in markers, also with a marker before an `<iframe>` which TinyMCE wrapped in a paragraph | Equal |
 | Re-translation whose doc block differs only in markers | The Client's contents are kept; browser tests `overall_1::test_client_updates` and `overall_3::test_8` fail without this |
@@ -145,7 +149,7 @@ Existing expected HTML in `processing/tests.rs`, `ide/vscode/tests.rs` and
 `server/tests/overall*.rs` gains markers; removing them must give the old
 expectations exactly, except that diff lengths grow by the markers' length.
 Tests that call `markdown_to_html` directly pass an empty list and don't
-change. The clipboard change in the Client is checked by hand; the caret
-change has no test.
+change. The clipboard change and Enter in a list item are checked by hand;
+the caret change has no test.
 
-<h3 id="cc-FekMIBZOuZ" data-gather="cc-Ux5oCqGB58 cc-ehJC2b6tRN cc-LVzecWlvge cc-3Q7ZgTnUbT cc-fHkfDh9IcD cc-AZYIpZE6s0 cc-fI5iKBnJat">Implementation of Markdown source line numbers</h3>
+<h2 id="cc-FekMIBZOuZ" data-gather="cc-Ux5oCqGB58 cc-xUdLzouspj cc-ehJC2b6tRN cc-LVzecWlvge cc-3Q7ZgTnUbT cc-fHkfDh9IcD cc-AZYIpZE6s0 cc-fI5iKBnJat">Implementation of Markdown source line numbers</h2>

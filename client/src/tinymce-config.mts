@@ -197,13 +197,12 @@ export const init = async (
 // The Server puts a hidden marker before the content of each Markdown line;
 // see [line-number-spec.md](../../line-number-spec.md).
 //
-// TinyMCE counts the number inside a marker as content, so a block which holds
-// only markers doesn't get the `<br>` TinyMCE puts in an empty block. That
-// block has no height, so the caret can't enter it, and saving drops it, since
-// the Server removes the markers. Such a block appears when Enter splits a
-// paragraph just after its marker, and when TinyMCE parses contents, as in
-// `setContent`: its parser removes the `<br>` which ends a block it doesn't
-// consider empty. Add the `<br>` in both cases.
+// TinyMCE counts the number inside a marker as content. When Enter splits a
+// block just after its marker, the first half holds only the marker, so it
+// isn't treated as empty: it gets no `<br>`, so it has no height once saved,
+// and Enter in an empty-looking list item adds an item instead of leaving the
+// list. Move the marker to the second half, which holds the text of its line,
+// and give the first half the `<br>` of an empty block.
 //
 // A copy or cut puts the selected HTML on the clipboard. Leave the markers out
 // of it: their numbers don't fit where the text is pasted, and an editor
@@ -223,42 +222,16 @@ const handleLineMarkers = (
                 .querySelectorAll("l-n")
                 .forEach((marker) => marker.remove());
             if (editor.dom.isEmpty(withoutMarkers)) {
+                newBlock.prepend(...block.querySelectorAll("l-n"));
                 editor.dom.add(block, "br", { "data-mce-bogus": "1" });
             }
         }
     });
-    // The parser exists once the editor starts to initialize.
-    editor.on("PreInit", () => {
-        const blockElements = editor.schema.getBlockElements();
-        editor.parser.addNodeFilter("l-n", (markers) => {
-            for (const marker of markers) {
-                const block = marker.parent;
-                if (!block || !(block.name in blockElements)) {
-                    continue;
-                }
-                // TinyMCE's own filter may run before or after this one, so
-                // the block may still hold its `<br>`.
-                const children = block.children();
-                const brs = children.filter((child) => child.name === "br");
-                if (
-                    brs.length <= 1 &&
-                    children.every(
-                        (child) => child.name === "l-n" || child.name === "br",
-                    )
-                ) {
-                    brs.forEach((br) => br.remove());
-                    block.append(
-                        tinymce.html.Node.create("br", {
-                            "data-mce-bogus": "1",
-                        }),
-                    );
-                }
-            }
-        });
-    });
-    // TinyMCE builds the clipboard's HTML from the selection's contents.
+    // TinyMCE builds the clipboard's HTML from the selection's contents. Its
+    // plain text comes from `innerText`, which already leaves out hidden
+    // markers, so a marker typed as text stays there.
     editor.on("GetContent", (event) => {
-        if (event.selection) {
+        if (event.selection && event.format === "html") {
             event.content = event.content.replace(/<l-n>\d+<\/l-n>/g, "");
         }
     });

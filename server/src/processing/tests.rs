@@ -3387,9 +3387,10 @@ fn test_line_markers_skipped_lines() {
     );
 }
 
-// Verify that no marker goes inside an element which inline HTML opens and
-// whose text isn't parsed as HTML, or is read by a diagram, until its end tag
-// or the end of the doc block; a tag in an image's `alt` text opens nothing.
+// Verify that no marker goes inside an element which inline HTML or an HTML
+// block opens and whose text isn't parsed as HTML, or is read by a diagram,
+// until its end tag or the end of the doc block; a tag in an image's `alt`
+// text opens nothing.
 #[test]
 fn test_line_markers_inline_html_text() {
     for (source, html) in [
@@ -3407,6 +3408,25 @@ fn test_line_markers_inline_html_text() {
         (
             "<iframe src=\"x\">\nfallback\n\nstill inside\n</iframe>\n\nAfter\n",
             "<iframe src=x>fallback <p>still inside</p></iframe><p><l-n>7</l-n>After",
+        ),
+        // The line closes one element and opens another.
+        (
+            "<iframe src=\"a\"></iframe><iframe src=\"b\">\n\nfallback\n</iframe>\n\nAfter\n",
+            "<iframe src=a></iframe><iframe src=b><p>fallback</p></iframe><p><l-n>6</l-n>After",
+        ),
+        // A tag inside one of these elements is its text and opens nothing.
+        (
+            "<script>let s = \"<iframe\";</script>\n\nAfter\n",
+            "<p><l-n>3</l-n>After",
+        ),
+        (
+            "<textarea>\n<iframe src=\"x\"></textarea>\n\nAfter\n",
+            "&lt;iframe src=\"x\"> <p><l-n>4</l-n>After",
+        ),
+        // A tag name ends only at whitespace, `/` or `>`.
+        (
+            "<div>\n<title_x>\n</div>\n\nAfter\n",
+            "<div></div><p><l-n>5</l-n>After",
         ),
         (
             "<wc-mermaid>graph TD\nA-->B\n</wc-mermaid>\n",
@@ -3451,8 +3471,8 @@ fn test_line_markers_source_file() {
 }
 
 // Verify that no marker is copied into a cross-reference's link text, an
-// `<xref>`'s saved optional content, or a gather list, and that the text after
-// a two-line `<xref>` is marked.
+// `<xref>`'s saved optional content (also when it holds another `<xref>`), or
+// a gather list, and that the text after a two-line `<xref>` is marked.
 #[test]
 fn test_line_markers_copies() {
     assert_eq!(
@@ -3462,6 +3482,24 @@ fn test_line_markers_copies() {
         ),
         [
             "<h1 id=t><l-n>1</l-n>Title</h1><p><l-n>3</l-n>See <xref contenteditable=false data-content ref=t><a href=#t>Title</a></xref> and <xref data-content=\"two\nlines\" contenteditable=false ref=t><a href=#t>two lines</a></xref><l-n>4</l-n> more"
+        ]
+    );
+    assert_eq!(
+        translate_to_html(
+            "# Title {#t}\n\nSee <xref ref=\"t\">a <xref ref=\"t\">b</xref>\nc</xref> d\n",
+            "foo.md"
+        ),
+        [
+            "<h1 id=t><l-n>1</l-n>Title</h1><p><l-n>3</l-n>See <xref data-content=\"a &amp;lt;xref ref=&amp;quot;t&amp;quot;&amp;gt;b&amp;lt;/xref&amp;gt;\nc\" contenteditable=false ref=t><a href=#t>a b c</a></xref><l-n>4</l-n> d"
+        ]
+    );
+    assert_eq!(
+        translate_to_html(
+            "# Title {#t}\n\n<xref ref=\"t\">\n<xref ref=\"t\">inner</xref>\n\nouter\n\n</xref>\n\nEnd\n",
+            "foo.md"
+        ),
+        [
+            "<h1 id=t><l-n>1</l-n>Title</h1><xref data-content=\"\n&amp;lt;xref ref=&amp;quot;t&amp;quot;&amp;gt;inner&amp;lt;/xref&amp;gt;\n&amp;lt;p&amp;gt;outer&amp;lt;/p&amp;gt;\n\" contenteditable=false ref=t><a href=#t> inner outer </a></xref><p><l-n>10</l-n>End"
         ]
     );
     assert_eq!(

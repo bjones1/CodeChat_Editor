@@ -1467,6 +1467,41 @@ const UNMARKED_ELEMENTS: [&str; 12] = [
     "xref",
 ];
 
+/// Follow the tags in inline HTML or a line of an HTML block from left to
+/// right, updating which element from `UNMARKED_ELEMENTS` is open. Only an
+/// `xref` nests, since its optional content may link too; inside the other
+/// elements a tag is text which html5ever doesn't parse as HTML, or a diagram's
+/// source.
+/// <fragment id="cc-xUdLzouspj"></fragment>
+fn track_unmarked_element(
+    // The open element and the number of `xref`s open inside it, updated in
+    // place.
+    unmarked_element: &mut Option<(String, usize)>,
+    // The HTML to follow.
+    html: &str,
+) {
+    for tag in html.split('<').skip(1) {
+        let (is_end_tag, tag) = match tag.strip_prefix('/') {
+            Some(rest) => (true, rest),
+            None => (false, tag),
+        };
+        let name = tag
+            .chars()
+            .take_while(|c| !c.is_ascii_whitespace() && *c != '/' && *c != '>')
+            .collect::<String>()
+            .to_ascii_lowercase();
+        match unmarked_element {
+            None if !is_end_tag && UNMARKED_ELEMENTS.contains(&name.as_str()) => {
+                *unmarked_element = Some((name, 0));
+            }
+            Some((open, nested)) if *open == name && !is_end_tag && name == "xref" => *nested += 1,
+            Some((open, 0)) if *open == name && is_end_tag => *unmarked_element = None,
+            Some((open, nested)) if *open == name && is_end_tag => *nested -= 1,
+            _ => {}
+        }
+    }
+}
+
 /// Convert markdown to HTML. (This assumes the Markdown defined in the
 /// CommonMark spec.) Insert a line marker such as `<l-n>24</l-n>` before the
 /// first inline event which starts on each line taken from the file, as
@@ -1510,11 +1545,11 @@ fn markdown_to_html(
     // blocks verbatim, and drops a metadata block's text but not inline HTML.
     let mut opaque_depth = 0;
     // The element from `UNMARKED_ELEMENTS` which inline HTML or an HTML block
-    // opened and hasn't yet closed. html5ever ends it only at its own end tag
-    // or at the end of the doc block: each is parsed on its own (see
-    // `doc_blocks_to_dom`). A blank line ends an HTML block but not the
-    // element, so the Markdown after it is still inside.
-    let mut unmarked_element: Option<String> = None;
+    // opened and hasn't yet closed; see `track_unmarked_element`. html5ever
+    // ends it only at its own end tag or at the end of the doc block: each is
+    // parsed on its own (see `doc_blocks_to_dom`). A blank line ends an HTML
+    // block but not the element, so the Markdown after it is still inside.
+    let mut unmarked_element = None;
     for (event, range) in Parser::new_ext(markdown, options).into_offset_iter() {
         let is_inline = matches!(
             event,
@@ -1556,40 +1591,11 @@ fn markdown_to_html(
             Event::End(
                 TagEnd::Image | TagEnd::CodeBlock | TagEnd::HtmlBlock | TagEnd::MetadataBlock(_),
             ) => opaque_depth -= 1,
-            // pulldown-cmark gives each inline tag its own event. In an image,
-            // the tag is `alt` text.
-            Event::InlineHtml(tag) if opaque_depth == 0 => {
-                let (is_end_tag, name) = match tag.strip_prefix("</") {
-                    Some(rest) => (true, rest),
-                    None => (false, tag.strip_prefix('<').unwrap_or_default()),
-                };
-                let name: String = name
-                    .chars()
-                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
-                    .collect::<String>()
-                    .to_ascii_lowercase();
-                if is_end_tag {
-                    if unmarked_element.as_ref() == Some(&name) {
-                        unmarked_element = None;
-                    }
-                } else if unmarked_element.is_none() && UNMARKED_ELEMENTS.contains(&name.as_str()) {
-                    unmarked_element = Some(name);
-                }
+            // In an image, inline HTML is `alt` text.
+            Event::InlineHtml(html) if opaque_depth == 0 => {
+                track_unmarked_element(&mut unmarked_element, html);
             }
-            Event::Html(html) => {
-                let html = html.to_ascii_lowercase();
-                let closes = |name: &str| html.contains(&format!("</{name}"));
-                if let Some(name) = &unmarked_element {
-                    if closes(name) {
-                        unmarked_element = None;
-                    }
-                } else {
-                    unmarked_element = UNMARKED_ELEMENTS
-                        .iter()
-                        .find(|name| html.contains(&format!("<{name}")) && !closes(name))
-                        .map(ToString::to_string);
-                }
-            }
+            Event::Html(html) => track_unmarked_element(&mut unmarked_element, html),
             _ => {}
         }
         events.push(event);
