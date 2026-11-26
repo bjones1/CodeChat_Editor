@@ -3245,8 +3245,22 @@ fn dehydrating_walk_node(
             // A hydrated gather list is entirely generated content, as is a
             // line marker (`l-n` is reserved for these); remove the node. The
             // slot now holds the next child, so leave `index` unchanged.
+            //
+            // Removing either leaves the text on each side of it as two text
+            // nodes, and htmd escapes block syntax, such as `2.`, at the start
+            // of each text node. Join them, as they were without the node.
+            // <fragment id="cc-GYm4GGc5ha"></fragment>
             if is_gather_items_div(&child) || get_node_tag_name(&child) == Some("l-n") {
-                node.children.borrow_mut().remove(index);
+                let mut children = node.children.borrow_mut();
+                children.remove(index);
+                if index > 0
+                    && index < children.len()
+                    && let NodeData::Text { contents: before } = &children[index - 1].data
+                    && let NodeData::Text { contents: after } = &children[index].data
+                {
+                    before.borrow_mut().push_tendril(&after.borrow());
+                    children.remove(index);
+                }
                 continue;
             }
             // Hydration adds the `contenteditable` attribute to both of these

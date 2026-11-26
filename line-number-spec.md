@@ -79,7 +79,9 @@ All in `server/src/processing.rs` unless noted.
    `add_clean_content_tags`. Link text copied from a heading, and gathered
    fragments, then carry no markers from another place.
 6. `dehydrating_walk_node`: remove every `<l-n>` with its number. `l-n` is
-   reserved for generated markers; one written by hand is removed too.
+   reserved for generated markers; one written by hand is removed too. Join
+   the text on either side of a removed marker into one text node: htmd
+   escapes block syntax, such as `2.`, at the start of each text node.
 7. `compare_html` (`translation.rs`): remove markers from both inputs before
    normalizing and comparing. Otherwise every Client edit which shifts lines
    makes the Server send a re-translation, and `minify` keeps a space next to
@@ -120,8 +122,8 @@ Client changes
   hidden text. So does `restoreSelection` in `CodeChatEditor.mts` after a
   re-translation, which can add a marker to a block made in the Client.
 
-Known deviation
----------------
+Known deviations
+----------------
 
 For a block comment whose text starts on the line after the opening
 delimiter (`/*⏎`), the generic lexer (every language but C, C++ and Python)
@@ -129,6 +131,10 @@ drops that newline, so the markers in it are one line early, and each such
 comment moves every later marker in the file one more line early. The
 fragment gutter numbers have the same offset; fixing the lexer is out of
 scope.
+
+TinyMCE's Find and Replace searches the text of hidden markers: a phrase
+which spans two lines isn't found, and a search for a number can find a
+marker.
 
 Tests
 -----
@@ -146,7 +152,7 @@ In `server/src/processing/tests.rs` (exact expected HTML) and
 | JavaScript file: 23 code lines, then two doc block lines, code, another doc block | Markers 24 and 25; the later block uses its file line |
 | `<xref>` to a heading in the same file, with text after a two-line one, also one holding another `<xref>`, inline or in an HTML block; gathered fragment | No marker in the link text, `data-content` or gathered copy; the text after the two-line `<xref>` is marked |
 | `<iframe` tag spanning two lines, then prose; `</iframe>` on a line of its own; an `<iframe>` line, a blank line, more text; a line which closes one `<iframe>` and opens another; `<script>` or `<textarea>` whose text holds `<iframe`; a `<title_x>` line, which isn't `<title>`; `<wc-mermaid>` over three lines; a JavaScript doc block which leaves `<wc-mermaid>` open | No marker inside any of these elements; the text after each element is marked, as is the next doc block |
-| Save a translated file with markers (Markdown and JavaScript) | Source identical to the input |
+| Save a translated file with markers (Markdown and JavaScript), also with a line which starts with `2.` | The same source as a save without markers: the input, except that htmd moves `2.` off the start of a line |
 | `compare_html` on HTML that differs only in markers, also with a marker before an `<iframe>` which TinyMCE wrapped in a paragraph, and with a space before a marker at the end of a block | Equal |
 | Re-translation whose doc block differs only in markers | The Client's contents are kept; browser tests `overall_1::test_client_updates` and `overall_3::test_8` fail without this |
 | Browser: Enter at the start of a paragraph, then Enter in the empty paragraph it leaves (`overall_3::test_8`) | The empty paragraph is saved as `<p><br></p>`, as without markers, and can be entered |
@@ -159,4 +165,4 @@ change. Checked by hand in TinyMCE: the clipboard change; Enter in a list
 item, before a later line of a paragraph and before a marker; typing next to
 a marker. The caret changes have no test.
 
-<h2 id="cc-FekMIBZOuZ" data-gather="cc-Ux5oCqGB58 cc-xUdLzouspj cc-ehJC2b6tRN cc-LVzecWlvge cc-3Q7ZgTnUbT cc-fHkfDh9IcD cc-AZYIpZE6s0 cc-fI5iKBnJat cc-yDqinUyTF3">Implementation of Markdown source line numbers</h2>
+<h2 id="cc-FekMIBZOuZ" data-gather="cc-Ux5oCqGB58 cc-xUdLzouspj cc-ehJC2b6tRN cc-LVzecWlvge cc-GYm4GGc5ha cc-3Q7ZgTnUbT cc-fHkfDh9IcD cc-AZYIpZE6s0 cc-fI5iKBnJat cc-yDqinUyTF3">Implementation of Markdown source line numbers</h2>

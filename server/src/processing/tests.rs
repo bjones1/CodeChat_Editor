@@ -3521,14 +3521,25 @@ fn test_line_markers_copies() {
 fn test_line_markers_round_trip() {
     let line_marker = Regex::new("<l-n>[0-9]+</l-n>").unwrap();
     let strip = |html: &str| line_marker.replace_all(html, "").into_owned();
-    for (file_name, source) in [
+    // Each case: a file name, its source, and what a save writes when that
+    // isn't the source. htmd rewraps a line so that it doesn't start with `2.`.
+    for (file_name, source, rewrapped) in [
         (
             "foo.md",
             "word word word word word word word word word word word word word word word\nboundary <xref ref=\"t\">two</xref>\n\n<h3 id=\"t\">Title</h3>\n",
+            None,
+        ),
+        (
+            "foo.md",
+            "word word word word word word word word word word word word word word word ab\n2. not a list\n",
+            Some(
+                "word word word word word word word word word word word word word word word ab 2.\nnot a list\n",
+            ),
         ),
         (
             "foo.js",
             "let a = 1;\n// word word word word word word word word word word word word word word\n// boundary\nlet b = 2;\n",
+            None,
         ),
     ] {
         let translation =
@@ -3549,6 +3560,6 @@ fn test_line_markers_round_trip() {
         assert_ne!(stripped, translation, "{source}");
         let saved = codechat_for_web_to_source(&translation).unwrap();
         assert_eq!(saved, codechat_for_web_to_source(&stripped).unwrap());
-        assert_eq!(saved, source);
+        assert_eq!(saved, rewrapped.unwrap_or(source));
     }
 }
