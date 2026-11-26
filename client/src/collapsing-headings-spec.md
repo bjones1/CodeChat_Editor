@@ -151,42 +151,40 @@ Examples
 --------
 
 `H1 A` is a level-1 heading with text `A`; `p1` is a paragraph; `code1` is a
-code block. Each example starts with every section shown unless its Document
-cell specifies otherwise. Results describe visible content and any observable
-save or synchronization behavior. Examples of updates from the Server leave
-the cursor outside hidden content unless cursor movement is the action being
-tested.
+code block. Examples whose Document cell starts with "Source file:" describe a
+source file; every other example is a Markdown document. Each example starts
+with every section shown unless its Document cell specifies otherwise. Results
+describe visible content and any observable save or synchronization behavior.
+Examples of updates from the Server leave the cursor outside hidden content
+unless cursor movement is the action being tested. The Test column says where
+the example is tested (see Tests below).
 
-| # | Document | Action | Expected result |
-| -- | -- | -- | -- |
-| 1 | `H1 A`, `p1`, `H2 B`, `p2`, `H1 C`, `p3` | Collapse A | `H1 A`, `H1 C`, `p3` |
-| 2 | Same as 1 | Collapse B | `H1 A`, `p1`, `H2 B`, `H1 C`, `p3` |
-| 3 | Same as 1 | Collapse B, collapse A, expand A | `H1 A`, `p1`, `H2 B`, `H1 C`, `p3` (B stays collapsed) |
-| 4 | `H2 A`, `p1`, `H3 B`, `p2` | Collapse A | `H2 A` (the section runs to the end) |
-| 5 | A list holding `H2 X` | (none) | No icon beside `X` |
-| 6 | Source file: doc block [`H1 A`, `p1`], `code1`, doc block [`H2 B`], `code2`, doc block [`H1 C`] | Collapse A | Doc block [`H1 A`], doc block [`H1 C`] |
-| 7 | Source file: doc block [`H2 A`, `p1`], `code1`, doc block [`p2`, `H2 B`, `p3`] | Collapse A | Doc block [`H2 A`], doc block [`H2 B`, `p3`] |
-| 8 | Same as 1 | Collapse A, edit p3, wait for autosave | Outgoing document HTML and the saved file equal those from the same edit with A shown; p1, B and p2 remain in the document |
-| 9 | Same as 6, A collapsed | The IDE moves the cursor into `code1` | A stays collapsed; the Client scrolls to A and its cursor stays where it was |
-| 10 | Same as 1, A collapsed | Delete heading A in the Client | `p1`, `H2 B`, `p2`, `H1 C`, `p3` |
-| 11 | Source file: doc block [`H2 A`, `p1`, `H2 B`, `p2`] | Collapse A | Doc block [`H2 A`, `H2 B`, `p2`] |
-| 12 | Same as 1, initially clean | Collapse A, then expand A without editing | No document content sent; no dirty state |
-| 13 | Same as 1, A collapsed | The IDE inserts a paragraph above A | New paragraph, `H1 A`, `H1 C`, `p3`; A remains collapsed |
-| 14 | Same as 1, A collapsed | The IDE renames A to D | `H1 D`, `p1`, `H2 B`, `p2`, `H1 C`, `p3`; D starts expanded |
-| 15 | Same as 1, A collapsed | The IDE sends a full content replacement with the same headings and an edit to p3 | `H1 A`, `H1 C`, edited p3; A remains collapsed |
-| 16 | Same as 6, A collapsed; IDE cursor outside A's section | The IDE scrolls to `code1` | A stays collapsed; the Client scrolls to A |
-| 17 | Same as 1, A and B collapsed; p3 links to an id in p2 | Follow the link in the Client | A and B open; the Client scrolls to p2 |
-| 18 | Same as 1, A collapsed | Backspace at the start of C in the Client | A opens before C merges into p2; result equals the same edit with A shown |
-| 19 | Same as 1, A collapsed | Select from the start of A to the start of C and type `X` | A opens before replacement; document content equals the same replacement with A shown |
-| 20 | Same as 1, A collapsed | Place the Client cursor in C | The position sent to the IDE maps to C, as with A shown |
-| 21 | Same as 1, A and B collapsed | Delete heading A in the Client | `p1`, `H2 B`, `H1 C`, `p3`; B stays collapsed |
-| 22 | `H2 A`, `p1`, `H2 A`, `p2`, both A headings collapsed | The IDE updates p1 without changing headings | Both A headings remain collapsed, matched by occurrences 1 and 2 |
-| 23 | Same as 1, A collapsed | Close and reopen the file | Every section shown |
-| 24 | Same as 1 | Tab to A's button, press Space, then Enter | A collapses and expands; focus stays on the button and `aria-expanded` follows its state |
-| 25 | `H2 A` at the end of the document | Collapse A | A stays visible, with ▸; no content changes |
-| 26 | Source file: doc block rendered from `/// # Examples` and `/// p1`, then `code1`, then doc block rendered from `/// # Next` | Collapse Examples | Doc block [`H1 Examples`], doc block [`H1 Next`] |
-| 27 | `H1 A` with an existing id, followed by p1 | Collapse A, edit A's text, wait for autosave | A stays collapsed; the saved heading keeps its id and contains no collapse markup |
-| 28 | `H2 A`, `p1`, `H2 B`, `p2`; A collapsed | Change A to level 1 in the Client | A remains collapsed and now also hides B and p2 |
+| # | Document | Action | Expected result | Test |
+| -- | -- | -- | -- | -- |
+| 1 | `H1 A`, `p1`, `H2 B`, `p2`, `H1 C`, `p3` | Collapse A | `H1 A`, `H1 C`, `p3` | Client |
+| 2 | Same as 1 | Collapse B, collapse A, expand A | `H1 A`, `p1`, `H2 B`, `H1 C`, `p3` (B stays collapsed) | Client |
+| 3 | `H2 A`, `p1`, `H3 B`, `p2` | Collapse A | `H2 A` (the section runs to the end) | Client |
+| 4 | A list holding `H2 X` | (none) | No icon beside `X` | Client |
+| 5 | Same as 1 | Tab to A's button, press Space, then Enter | A collapses and expands; focus stays on the button and `aria-expanded` follows its state | Client |
+| 6 | Source file: doc block [`H1 A`, `p1`], `code1`, doc block [`H2 B`], `code2`, doc block [`H1 C`] | Collapse A | Doc block [`H1 A`], doc block [`H1 C`] | Client |
+| 7 | Source file: doc block [`H2 A`, `p1`], `code1`, doc block [`p2`, `H2 B`, `p3`] | Collapse A | Doc block [`H2 A`], doc block [`H2 B`, `p3`] | Client |
+| 8 | Source file: doc block [`H2 A`, `p1`, `H2 B`, `p2`] | Collapse A | Doc block [`H2 A`, `H2 B`, `p2`] | Client |
+| 9 | Same as 1, initially clean | Collapse A, then expand A without editing | No document content sent; no dirty state | Client |
+| 10 | Same as 1 | Collapse A, edit p3, wait for autosave | Outgoing document HTML and the saved file equal those from the same edit with A shown; p1, B and p2 remain in the document | overall.rs |
+| 11 | `H1 A` with an existing id, followed by p1 | Collapse A, edit A's text, wait for autosave | A stays collapsed; the saved heading keeps its id and contains no collapse markup | overall.rs |
+| 12 | Same as 1, A collapsed | Place the Client cursor in C | The position sent to the IDE maps to C, as with A shown | overall.rs |
+| 13 | Same as 6, A collapsed | The IDE moves the cursor into `code1`, or only scrolls to it | A stays collapsed; the Client scrolls to A and its cursor stays where it was | Client |
+| 14 | Same as 1, A and B collapsed; p3 links to an id in p2 | Follow the link in the Client | A and B open; the Client scrolls to p2 | Client |
+| 15 | Same as 1, A collapsed | Backspace at the start of C in the Client | A opens before C merges into p2; result equals the same edit with A shown | Client |
+| 16 | Same as 1, A collapsed | Select from the start of A to the start of C and type `X` | A opens before replacement; document content equals the same replacement with A shown | Client |
+| 17 | Same as 1, A and B collapsed | Change A into a paragraph in the Client | Paragraph `A`, `p1`, `H2 B`, `H1 C`, `p3`; B stays collapsed | Client |
+| 18 | `H2 A`, `p1`, `H2 B`, `p2`; A collapsed | Change A to level 1 in the Client | A remains collapsed and now also hides B and p2 | Client |
+| 19 | Same as 1, A collapsed | The IDE inserts a paragraph above A | New paragraph, `H1 A`, `H1 C`, `p3`; A remains collapsed | Client |
+| 20 | Same as 1, A collapsed | The IDE renames A to D | `H1 D`, `p1`, `H2 B`, `p2`, `H1 C`, `p3`; D starts expanded | Client |
+| 21 | Same as 6, A collapsed | The IDE edits `code1`, sent once as a full content replacement and once as a diff | A remains collapsed in both cases | Client |
+| 22 | `H2 A`, `p1`, `H2 A`, `p2`, both A headings collapsed | The IDE updates p1 without changing headings | Both A headings remain collapsed, matched by occurrences 1 and 2 | Client |
+| 23 | Same as 1, A collapsed | Close and reopen the file | Every section shown | overall.rs |
+| 24 | Same as 1, A collapsed | Edit p3 so that the Server's reply to the autosave changes the content (for example, a line it re-wraps), and wait for that update | The update replaces the content; A remains collapsed and p3 shows the Server's version | overall.rs |
 
 Implementation
 --------------
@@ -221,11 +219,13 @@ Implementation
   go-to-line must open the sections hiding their target first. Reveal hidden
   content before an edit affects it (rule 8), including edits crossing
   doc-block boundaries.
-* **Tests:** cover every example and rule in Client tests in
-  [CodeChatEditor-test.mts](CodeChatEditor-test.mts), including raw saves,
-  inactive doc-block `innerHTML`, nested folds, keyboard focus, and both full
-  and incremental IDE updates. Repeat save and cursor-mapping checks for both
-  Markdown and source files. Use the browser integration tests in
-  [overall.rs](../../server/tests/overall.rs) for end-to-end saving and IDE
-  synchronization; prefer Client tests for behavior that does not need that
-  round trip.
+* **Tests:** every example has one test, in the layer given by its Test
+  column. Client tests in [CodeChatEditor-test.mts](CodeChatEditor-test.mts)
+  run only in `test.py?test` and cover the examples that need no Server:
+  raw saves, inactive doc-block `innerHTML`, nested folds, keyboard focus, and
+  both full and incremental IDE updates, simulated by calling the Client's
+  update paths. They have no Markdown fixture yet, so add one next to the
+  source-file fixture; repeat save checks for both kinds of document. The
+  examples that need the Server, a saved file or a page reload (10, 11, 12, 23
+  and 24) are browser integration tests in
+  [overall.rs](../../server/tests/overall.rs).
