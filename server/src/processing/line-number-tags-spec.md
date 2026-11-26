@@ -321,6 +321,8 @@ Hydration invariants:
 
 <h3 id="cc-Wm3Zt9Kq2B" data-gather="cc-Hx4rQ7mWbN">Implementation of Sanitization &amp; hydration</h3>
 
+<h4 id="cc-SeneIz1s1G" data-gather="cc-T070lmC3Kr cc-00HQJVDtIM cc-DrSjxNsErz">Implementation of Client changes</h4>
+
 ### Dehydration
 * **Removal:** A separate pre-pass deletes every `l-n` element and its content—matching on local name across all depths and namespaces (including foreign `<svg>`/`<math>` contexts and `template_contents`). Both callers of `dehydrating_walk_node` (the Markdown document path in `codechat_for_web_to_source` and `doc_block_html_to_markdown`) and the test helper `dehydrate_html` run it first. It must be a separate pass because `dehydrating_walk_node` doesn't descend into the nodes it replaces (Mermaid/GraphViz, math, `<pre>` with `<br>`), and a stray tag would block those replacements, which require a single text child or only text and `<br>` children.
 * **Fidelity:** After removing a tag, the pre-pass merges the text nodes on either side of it, so `htmd` sees the same DOM tree as for HTML without tags. Because break whitespace stays outside tags, the resulting Markdown is byte-identical. Pasted `<l-n>` DOM elements are stripped on save, while hand-written `<l-n>` tags in Markdown were escaped during translation and are preserved.
@@ -366,7 +368,7 @@ hand-written-tag warning test lives in `server/tests/line_number_warnings.rs`,
 its own test binary, because `log::set_logger` can be set only once per process
 and the `ide::vscode` lib tests install log4rs.
 
-Required cases:
+### Required cases
 
 * <strong>Placement:</strong> paragraph with soft and hard breaks; code span and
   inline math spanning lines (both when ending the line with no tag on line 2,
@@ -436,6 +438,8 @@ Required cases:
   `<p><l-n>3</l-n>a</p>` into TinyMCE, verify the tag stays inside `<p>` with `display: none`, enter the
   tagged doc block from the line above, type a character, and confirm it is
   visible and survives a save.
+
+<h4 id="cc-druTO1wStX" data-gather="cc-83kfSiFv9a">Implementation of Client testing</h4>
 
 Implementation checklist
 ------------------------

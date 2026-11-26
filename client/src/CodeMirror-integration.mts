@@ -1239,7 +1239,9 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             const atEnd = mainSelection.head >= to;
                             const range = document.createRange();
                             // Walk to the first/last actual text node under
-                            // `contents`, rather than using
+                            // `contents`, skipping hidden line-number subtrees
+                            // so typed text stays visible and survives the
+                            // Server's removal of those tags on save. Avoid
                             // `selectNodeContents` + `collapse` (which anchors
                             // the selection on `contents` itself, at a
                             // childNodes-index boundary). `saveSelection`
@@ -1254,15 +1256,29 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             // TinyMCE's own init happens to put it (its start).
                             // Anchoring on a text node instead keeps the
                             // walk -- and thus the edge placement -- intact.
-                            let edgeNode: Node = contents;
-                            while (
-                                atEnd ? edgeNode.lastChild : edgeNode.firstChild
-                            ) {
-                                edgeNode = atEnd
-                                    ? edgeNode.lastChild!
-                                    : edgeNode.firstChild!;
-                            }
-                            if (edgeNode.nodeType === Node.TEXT_NODE) {
+                            // <fragment id="cc-DrSjxNsErz"></fragment>
+                            const walker = document.createTreeWalker(
+                                contents,
+                                NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+                                {
+                                    acceptNode: (
+                                        // The candidate node in the doc block.
+                                        node,
+                                        // The filter result, pruning metadata
+                                        // and accepting only text nodes.
+                                    ): number =>
+                                        node instanceof Element &&
+                                        node.localName === "l-n"
+                                            ? NodeFilter.FILTER_REJECT
+                                            : node.nodeType === Node.TEXT_NODE
+                                              ? NodeFilter.FILTER_ACCEPT
+                                              : NodeFilter.FILTER_SKIP,
+                                },
+                            );
+                            const edgeNode = atEnd
+                                ? walker.lastChild()
+                                : walker.firstChild();
+                            if (edgeNode !== null) {
                                 const offset = atEnd
                                     ? (edgeNode.textContent?.length ?? 0)
                                     : 0;

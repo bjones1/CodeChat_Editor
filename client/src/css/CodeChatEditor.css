@@ -43,12 +43,20 @@
    [gathered fragment styling](gathered-fragments) needs: it aligns generated
    content against the source it came from, and a theme which happened to style
    the elements it uses would break that alignment rather than restyle it.
-   Nothing but that section belongs out here; anything a theme should be free to
-   restyle goes in [CodeChatEditorBase.css](CodeChatEditorBase.css) instead.
+   Line-number tags also belong outside the layer: their metadata must stay
+   hidden regardless of the theme. Anything a theme should be free to restyle
+   goes in [CodeChatEditorBase.css](CodeChatEditorBase.css) instead.
 
    Eventually, the theme will be a user-configurable setting. */
 @import url("themes/light.css") layer(app);
 @import url("CodeChatEditorBase.css") layer(app);
+
+/* Line-number tags map rendered text to source lines; hiding them also keeps
+   browser caret movement out of their digits.
+   <fragment id="cc-00HQJVDtIM"></fragment> */
+l-n {
+    display: none;
+}
 
 /* <h1 id="gathered-fragments">Gathered fragment styling</h1>
 

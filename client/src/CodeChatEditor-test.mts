@@ -30,6 +30,7 @@ import "mocha/mocha.js";
 import "mocha/mocha.css";
 import { EditorView } from "@codemirror/view";
 import { ChangeSpec, EditorState, EditorSelection } from "@codemirror/state";
+import type { Editor } from "tinymce";
 import { CodeMirror, CodeMirrorDocBlockTuple } from "./shared.mjs";
 import {
     DocBlockPlugin,
@@ -313,6 +314,84 @@ window.CodeChatEditor_test = () => {
                 const afterEditing = lineNumberTops(editedItems);
                 assert.lengthOf(afterEditing, 2);
                 assert.isAbove(afterEditing[1], afterEditing[0]);
+            });
+        });
+
+        // Use a separate editor so this typing test cannot autosave changes to
+        // the open file. It shares the production caret-placement plugin and
+        // TinyMCE configuration, while saving through TinyMCE directly.
+        // <fragment id="cc-83kfSiFv9a"></fragment>
+        suite("Line-number tags", function () {
+            test("keeps metadata hidden and saves text entered from above", async function () {
+                this.timeout(MOCHA_TEST_TIMEOUT_MS);
+
+                const { init } = await import("./tinymce-config.mjs");
+                const testingDiv = document.createElement("div");
+                document.getElementById("CodeChat-body")!.append(testingDiv);
+                const taggedHtml = "<p><l-n>3</l-n>a</p>";
+                const state = EditorState.fromJSON(
+                    {
+                        doc: "x\n\n\ny",
+                        selection: EditorSelection.single(1).toJSON(),
+                        doc_blocks: [[2, 4, "", "#", taggedHtml]],
+                    },
+                    { extensions: [DocBlockPlugin] },
+                    codeMirrorJsonFields,
+                );
+                const view = new EditorView({ parent: testingDiv, state });
+                let editor: Editor | undefined;
+                try {
+                    const contents = testingDiv.querySelector<HTMLDivElement>(
+                        ".CodeChat-doc-contents",
+                    )!;
+                    // Keep the singleton editor's focus handler from promoting
+                    // this isolated doc block into the open document's editor.
+                    contents.addEventListener(
+                        "focusin",
+                        (
+                            // Focus within this test's TinyMCE instance.
+                            event,
+                            // Stops the production promotion handler.
+                        ): void => event.stopPropagation(),
+                    );
+                    [editor] = await init({ target: contents });
+                    editor.setContent(taggedHtml);
+                    assert.equal(editor.getContent(), taggedHtml);
+                    const paragraph = contents.querySelector("p")!;
+                    const lineNumber = contents.querySelector("l-n")!;
+                    assert.strictEqual(lineNumber.parentElement, paragraph);
+                    assert.equal(getComputedStyle(lineNumber).display, "none");
+
+                    // Reproduce navigation from the end of the code line above
+                    // to the doc block's start, where the plugin places the
+                    // script-driven caret.
+                    view.focus();
+                    assert.equal(view.state.selection.main.head, 1);
+                    view.dispatch({ selection: { anchor: 2 } });
+                    const range = editor.selection.getRng();
+                    assert.strictEqual(
+                        range.startContainer,
+                        paragraph.lastChild,
+                    );
+                    assert.equal(range.startOffset, 0);
+                    assert.isTrue(
+                        document.execCommand("insertText", false, "b"),
+                    );
+                    assert.equal(lineNumber.textContent, "3");
+                    assert.equal(paragraph.innerText, "ba");
+
+                    // The Server discards line-number subtrees on save. The
+                    // character must remain outside that subtree in the saved
+                    // HTML, and visible when that HTML is loaded again.
+                    const savedHtml = editor.save();
+                    assert.equal(savedHtml, "<p><l-n>3</l-n>ba</p>");
+                    editor.setContent(savedHtml);
+                    assert.equal(contents.querySelector("p")!.innerText, "ba");
+                } finally {
+                    editor?.remove();
+                    view.destroy();
+                    testingDiv.remove();
+                }
             });
         });
     });
