@@ -43,8 +43,9 @@
    [gathered fragment styling](gathered-fragments) needs: it aligns generated
    content against the source it came from, and a theme which happened to style
    the elements it uses would break that alignment rather than restyle it.
-   Nothing but that section belongs out here; anything a theme should be free to
-   restyle goes in [CodeChatEditorBase.css](CodeChatEditorBase.css) instead.
+   Nothing but that section and the rule which hides line markers belongs out
+   here; anything a theme should be free to restyle goes in
+   [CodeChatEditorBase.css](CodeChatEditorBase.css) instead.
 
    Eventually, the theme will be a user-configurable setting. */
 @import url("themes/light.css") layer(app);
@@ -173,4 +174,11 @@
     padding-right: 1ch;
     text-align: right;
     opacity: 0.5;
+}
+
+/* A line marker such as `<l-n>24</l-n>`, which the Server puts before the
+   content of each Markdown line to record its line number in the source file
+   (see `line-number-spec.md`). It is metadata, never shown. */
+l-n {
+    display: none;
 }

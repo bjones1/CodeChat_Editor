@@ -654,7 +654,7 @@ fn test_source_to_codechat_for_web_1() {
         ),
         Ok(build_codechat_for_web(
             MARKDOWN_MODE,
-            &format!("<p>{lexer_spec}markdown"),
+            &format!("<p><l-n>1</l-n>{lexer_spec}markdown"),
             vec![]
         ))
     );
@@ -677,7 +677,13 @@ fn test_source_to_codechat_for_web_1() {
         Ok(build_codechat_for_web(
             "javascript",
             "\n",
-            vec![build_codemirror_doc_block(0, 1, "", "//", "<p>Test")]
+            vec![build_codemirror_doc_block(
+                0,
+                1,
+                "",
+                "//",
+                "<p><l-n>1</l-n>Test"
+            )]
         ))
     );
     assert_eq!(
@@ -685,7 +691,13 @@ fn test_source_to_codechat_for_web_1() {
         Ok(build_codechat_for_web(
             "javascript",
             "let a = 1;\n\n",
-            vec![build_codemirror_doc_block(11, 12, "", "//", "<p>Test")]
+            vec![build_codemirror_doc_block(
+                11,
+                12,
+                "",
+                "//",
+                "<p><l-n>2</l-n>Test"
+            )]
         ))
     );
     assert_eq!(
@@ -693,7 +705,13 @@ fn test_source_to_codechat_for_web_1() {
         Ok(build_codechat_for_web(
             "javascript",
             "\nlet a = 1;",
-            vec![build_codemirror_doc_block(0, 1, "", "//", "<p>Test")]
+            vec![build_codemirror_doc_block(
+                0,
+                1,
+                "",
+                "//",
+                "<p><l-n>1</l-n>Test"
+            )]
         ))
     );
 
@@ -711,7 +729,13 @@ fn test_source_to_codechat_for_web_1() {
             "javascript",
             "\nlet a = 1;\n\n",
             vec![
-                build_codemirror_doc_block(0, 1, "", "//", "<p><a href=http://b.org>Link</a>"),
+                build_codemirror_doc_block(
+                    0,
+                    1,
+                    "",
+                    "//",
+                    "<p><l-n>1</l-n><a href=http://b.org>Link</a>"
+                ),
                 build_codemirror_doc_block(12, 13, "", "/*", "")
             ]
         ))
@@ -782,7 +806,13 @@ fn test_source_to_codechat_for_web_1() {
         Ok(build_codechat_for_web(
             "cpp",
             "\n;",
-            vec![build_codemirror_doc_block(0, 1, "", "//", "<p>σ😄👉🏿👨‍👦🇺🇳"),]
+            vec![build_codemirror_doc_block(
+                0,
+                1,
+                "",
+                "//",
+                "<p><l-n>1</l-n>σ😄👉🏿👨‍👦🇺🇳"
+            ),]
         ))
     );
 
@@ -807,7 +837,7 @@ fn test_source_to_codechat_for_web_1() {
                     "/*",
                     "<pre><code class=language-foo>\n\n</code></pre>"
                 ),
-                build_codemirror_doc_block(2, 3, "", "//", "<p>Test"),
+                build_codemirror_doc_block(2, 3, "", "//", "<p><l-n>3</l-n>Test"),
             ]
         ))
     );
@@ -831,7 +861,7 @@ fn test_source_to_codechat_for_web_1() {
                     "/*",
                     "<pre><code class=language-foo>\n\n</code></pre>"
                 ),
-                build_codemirror_doc_block(2, 3, "", "//", "<p>Test"),
+                build_codemirror_doc_block(2, 3, "", "//", "<p><l-n>3</l-n>Test"),
             ]
         ))
     );
@@ -862,7 +892,7 @@ fn test_source_to_codechat_for_web_1() {
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<strong> </strong>"),
-                build_codemirror_doc_block(1, 2, " ", "//", "<p>Test"),
+                build_codemirror_doc_block(1, 2, " ", "//", "<p><l-n>2</l-n>Test"),
             ]
         ))
     );
@@ -883,7 +913,7 @@ fn test_source_to_codechat_for_web_1() {
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<pre></pre>"),
-                build_codemirror_doc_block(1, 2, " ", "//", "<p><em>Test</em>"),
+                build_codemirror_doc_block(1, 2, " ", "//", "<p><l-n>2</l-n><em>Test</em>"),
             ]
         ))
     );
@@ -910,8 +940,8 @@ fn test_source_to_codechat_for_web_1() {
             "cpp",
             "\n\n\nthree();\n\n",
             vec![
-                build_codemirror_doc_block(0, 3, "", "//", "<p>One<p>Two"),
-                build_codemirror_doc_block(12, 13, "", "//", "<p>Four"),
+                build_codemirror_doc_block(0, 3, "", "//", "<p><l-n>1</l-n>One<p><l-n>3</l-n>Two"),
+                build_codemirror_doc_block(12, 13, "", "//", "<p><l-n>5</l-n>Four"),
             ]
         ))
     );
@@ -938,7 +968,7 @@ fn test_source_to_codechat_for_web_1() {
                 1,
                 "",
                 "//",
-                r"<p><a id=one></a>1"
+                r"<p><l-n>1</l-n><a id=one></a>1"
             ),]
         ))
     );
@@ -1706,7 +1736,7 @@ fn check_empty_block_round_trip(case: &EmptyBlockCase) -> Option<String> {
         );
     };
     let markdown = &doc_block.contents;
-    let html = markdown_to_html(markdown);
+    let html = markdown_to_html(markdown, &[]);
     // Print both stages before reporting, so that a run shows the whole round
     // trip for every case, not just the ones which failed.
     println!(
@@ -1795,13 +1825,16 @@ fn test_hydrate_html_1() {
     // user provides) instead of dry -> wet HTML.
     assert_eq!(
         hydrate_html(
-            &markdown_to_html(indoc!(
-                "```mermaid
+            &markdown_to_html(
+                indoc!(
+                    "```mermaid
             flowchart LR
                 start --> stop
             ```
             "
-            )),
+                ),
+                &[]
+            ),
             Path::new("foo.md"),
             &Arc::new(Mutex::new(Cache::default()))
         )
@@ -1817,14 +1850,17 @@ fn test_hydrate_html_1() {
 
     assert_eq!(
         hydrate_html(
-            &markdown_to_html(indoc!(
-                "```graphviz
+            &markdown_to_html(
+                indoc!(
+                    "```graphviz
             digraph {
                 start -> stop
             }
             ```
             "
-            )),
+                ),
+                &[]
+            ),
             Path::new("foo.md"),
             &Arc::new(Mutex::new(Cache::default()))
         )
@@ -1842,8 +1878,9 @@ fn test_hydrate_html_1() {
     // Ensure math doesn't need escaping.
     assert_eq!(
         hydrate_html(
-            &markdown_to_html(indoc!(
-                "
+            &markdown_to_html(
+                indoc!(
+                    "
             ${a}_1, b_{2}$
             $a*1, b*2$
             $[a](b)$
@@ -1852,7 +1889,9 @@ fn test_hydrate_html_1() {
 
             $${a}_1, b_{2}, a*1, b*2, [a](b), 3 <a> b, a \\; b$$
             "
-            )),
+                ),
+                &[]
+            ),
             Path::new("foo.md"),
             &Arc::new(Mutex::new(Cache::default()))
         )
@@ -1871,7 +1910,7 @@ fn test_hydrate_html_1() {
 
     assert_eq!(
         hydrate_html(
-            &markdown_to_html("1. foo\u{a0}\n2. bar \n3. baz&#32;"),
+            &markdown_to_html("1. foo\u{a0}\n2. bar \n3. baz&#32;", &[]),
             Path::new("foo.md"),
             &Arc::new(Mutex::new(Cache::default()))
         )
@@ -1912,7 +1951,7 @@ fn test_hydrate_xref_same_file() {
                     13,
                     "",
                     "//",
-                    "<p>See <xref contenteditable=false data-content ref=a><a href=#a>Title</a></xref>"
+                    "<p><l-n>3</l-n>See <xref contenteditable=false data-content ref=a><a href=#a>Title</a></xref>"
                 )
             ]
         ))
@@ -1938,7 +1977,7 @@ fn test_hydrate_xref_missing() {
                 1,
                 "",
                 "//",
-                "<p>See <xref contenteditable=false data-content ref=nope><span class=cc-error>id \"nope\" not found</span></xref>"
+                "<p><l-n>1</l-n>See <xref contenteditable=false data-content ref=nope><span class=cc-error>id \"nope\" not found</span></xref>"
             )]
         ))
     );
@@ -1964,7 +2003,7 @@ fn test_hydrate_xref_without_ref() {
                 1,
                 "",
                 "//",
-                "<p>See <xref contenteditable=false data-content><span class=cc-error>a cross-reference requires a \"ref\" attribute</span></xref>."
+                "<p><l-n>1</l-n>See <xref contenteditable=false data-content><span class=cc-error>a cross-reference requires a \"ref\" attribute</span></xref>."
             )]
         ))
     );
@@ -1998,7 +2037,7 @@ fn test_hydrate_xref_strips_attributes() {
                     "",
                     "//",
                     concat!(
-                        "<p>See ",
+                        "<p><l-n>3</l-n>See ",
                         "<xref contenteditable=false data-content ref=t><a href=#t>Title</a></xref>",
                         " and ",
                         "<xref contenteditable=false data-content ref=t><a href=#t>Title</a></xref>",
@@ -2063,17 +2102,17 @@ fn test_hydrate_xref_optional_content() {
         code_mirror.doc_blocks[1].contents,
         concat!(
             "<ul>",
-            "<li><xref data-content=\"The &amp;lt;em&amp;gt;title&amp;lt;/em&amp;gt;\" contenteditable=false ref=t><a href=#t>The <em>title</em></a></xref>",
-            "<li><xref data-content=\"&amp;lt;a href=&amp;quot;https://example.com&amp;quot;&amp;gt;Link&amp;lt;/a&amp;gt; &amp;lt;b id=&amp;quot;b&amp;quot; data-gather=&amp;quot;f&amp;quot;&amp;gt;bold&amp;lt;/b&amp;gt;&amp;lt;fragment id=&amp;quot;f&amp;quot;&amp;gt;&amp;lt;/fragment&amp;gt; &amp;lt;xref ref=&amp;quot;u&amp;quot;&amp;gt;nested&amp;lt;/xref&amp;gt;\" contenteditable=false ref=t><a href=#t>Link <b>bold</b> nested</a></xref>",
-            "<li><xref data-content=\"The &amp;lt;span class=&amp;quot;math math-inline&amp;quot;&amp;gt;x^2&amp;lt;/span&amp;gt; value\" contenteditable=false ref=t><a href=#t>The <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span> value</a></xref>",
-            "<li><xref data-content=\"&amp;lt;pre&amp;gt;&amp;lt;code class=&amp;quot;language-mermaid&amp;quot;&amp;gt;graph TD&amp;lt;/code&amp;gt;&amp;lt;/pre&amp;gt;\" contenteditable=false ref=t><a href=#t><code>graph TD</code></a></xref>",
-            "<li><xref data-content=\"&amp;lt;wc-mermaid&amp;gt;graph LR&amp;lt;/wc-mermaid&amp;gt;\" contenteditable=false ref=t><a href=#t>graph LR</a></xref>",
-            "<li><xref data-content=\"&amp;lt;data value=&amp;quot;42&amp;quot;&amp;gt;n&amp;lt;/data&amp;gt; &amp;lt;time datetime=&amp;quot;2026-11-04&amp;quot;&amp;gt;today&amp;lt;/time&amp;gt; &amp;lt;bdi dir=&amp;quot;rtl&amp;quot;&amp;gt;x&amp;lt;/bdi&amp;gt; &amp;lt;del&amp;gt;old&amp;lt;/del&amp;gt; &amp;lt;ins&amp;gt;new&amp;lt;/ins&amp;gt;\" contenteditable=false ref=t><a href=#t><data value=42>n</data> <time datetime=2026-11-04>today</time> <bdi dir=rtl>x</bdi> <del>old</del> <ins>new</ins></a></xref>",
-            "<li><xref contenteditable=false data-content=&amp;lt;svg&amp;gt;&amp;lt;title&amp;gt;Hidden&amp;lt;/title&amp;gt;&amp;lt;/svg&amp;gt; ref=t><a href=#t>Title</a></xref>",
-            "<li><xref contenteditable=false data-content=&amp;lt;span&amp;gt;&amp;lt;/span&amp;gt; ref=t><a href=#t><span></span></a></xref>",
-            "<li><xref data-content=\" \" contenteditable=false ref=t><a href=#t>Title</a></xref>",
-            "<li><xref data-content=\"&amp;lt;!-- note --&amp;gt; \" contenteditable=false ref=t><a href=#t>Title</a></xref>",
-            "<li><xref contenteditable=false data-content=Missing ref=nope><span class=cc-error>id \"nope\" not found</span></xref>",
+            "<li><l-n>3</l-n><xref data-content=\"The &amp;lt;em&amp;gt;title&amp;lt;/em&amp;gt;\" contenteditable=false ref=t><a href=#t>The <em>title</em></a></xref>",
+            "<li><l-n>4</l-n><xref data-content=\"&amp;lt;a href=&amp;quot;https://example.com&amp;quot;&amp;gt;Link&amp;lt;/a&amp;gt; &amp;lt;b id=&amp;quot;b&amp;quot; data-gather=&amp;quot;f&amp;quot;&amp;gt;bold&amp;lt;/b&amp;gt;&amp;lt;fragment id=&amp;quot;f&amp;quot;&amp;gt;&amp;lt;/fragment&amp;gt; &amp;lt;xref ref=&amp;quot;u&amp;quot;&amp;gt;nested&amp;lt;/xref&amp;gt;\" contenteditable=false ref=t><a href=#t>Link <b>bold</b> nested</a></xref>",
+            "<li><l-n>5</l-n><xref data-content=\"The &amp;lt;span class=&amp;quot;math math-inline&amp;quot;&amp;gt;x^2&amp;lt;/span&amp;gt; value\" contenteditable=false ref=t><a href=#t>The <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span> value</a></xref>",
+            "<li><l-n>6</l-n><xref data-content=\"&amp;lt;pre&amp;gt;&amp;lt;code class=&amp;quot;language-mermaid&amp;quot;&amp;gt;graph TD&amp;lt;/code&amp;gt;&amp;lt;/pre&amp;gt;\" contenteditable=false ref=t><a href=#t><code>graph TD</code></a></xref>",
+            "<li><l-n>7</l-n><xref data-content=\"&amp;lt;wc-mermaid&amp;gt;graph LR&amp;lt;/wc-mermaid&amp;gt;\" contenteditable=false ref=t><a href=#t>graph LR</a></xref>",
+            "<li><l-n>8</l-n><xref data-content=\"&amp;lt;data value=&amp;quot;42&amp;quot;&amp;gt;n&amp;lt;/data&amp;gt; &amp;lt;time datetime=&amp;quot;2026-11-04&amp;quot;&amp;gt;today&amp;lt;/time&amp;gt; &amp;lt;bdi dir=&amp;quot;rtl&amp;quot;&amp;gt;x&amp;lt;/bdi&amp;gt; &amp;lt;del&amp;gt;old&amp;lt;/del&amp;gt; &amp;lt;ins&amp;gt;new&amp;lt;/ins&amp;gt;\" contenteditable=false ref=t><a href=#t><data value=42>n</data> <time datetime=2026-11-04>today</time> <bdi dir=rtl>x</bdi> <del>old</del> <ins>new</ins></a></xref>",
+            "<li><l-n>9</l-n><xref contenteditable=false data-content=&amp;lt;svg&amp;gt;&amp;lt;title&amp;gt;Hidden&amp;lt;/title&amp;gt;&amp;lt;/svg&amp;gt; ref=t><a href=#t>Title</a></xref>",
+            "<li><l-n>10</l-n><xref contenteditable=false data-content=&amp;lt;span&amp;gt;&amp;lt;/span&amp;gt; ref=t><a href=#t><span></span></a></xref>",
+            "<li><l-n>11</l-n><xref data-content=\" \" contenteditable=false ref=t><a href=#t>Title</a></xref>",
+            "<li><l-n>12</l-n><xref data-content=\"&amp;lt;!-- note --&amp;gt; \" contenteditable=false ref=t><a href=#t>Title</a></xref>",
+            "<li><l-n>13</l-n><xref contenteditable=false data-content=Missing ref=nope><span class=cc-error>id \"nope\" not found</span></xref>",
             "</ul>"
         )
     );
@@ -2127,7 +2166,7 @@ fn test_hydrate_target_inner_html_math() {
     assert_eq!(
         code_mirror.doc_blocks[1].contents,
         concat!(
-            "<p>See <xref contenteditable=false data-content ref=t><a href=#t>The <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span> value</a></xref>.",
+            "<p><l-n>3</l-n>See <xref contenteditable=false data-content ref=t><a href=#t>The <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span> value</a></xref>.",
             "<fragment contenteditable=false id=f>See <a href=#t>The <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span> value</a></fragment>"
         )
     );
@@ -2167,7 +2206,7 @@ fn test_hydrate_unclosed_tag() {
         let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
             panic!("No diff!");
         };
-        assert_eq!(code_mirror.doc_blocks[1].contents, "<p>Next.");
+        assert_eq!(code_mirror.doc_blocks[1].contents, "<p><l-n>3</l-n>Next.");
     }
 }
 
@@ -2409,7 +2448,7 @@ fn test_hydrate_unclosed_table() {
         code_mirror.doc_blocks[0].contents,
         "<table><tbody><tr><td>x</table>"
     );
-    assert_eq!(code_mirror.doc_blocks[1].contents, "<p>Later.");
+    assert_eq!(code_mirror.doc_blocks[1].contents, "<p><l-n>4</l-n>Later.");
 }
 
 // Verify that a target following an unclosed `<xref>` stays in the cache. The
@@ -2518,7 +2557,7 @@ fn test_hydrate_markdown_leading_comment() {
     let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
         panic!("No diff!");
     };
-    assert_eq!(code_mirror.doc, "<!-- c --><h1>Heading</h1>");
+    assert_eq!(code_mirror.doc, "<!-- c --><h1><l-n>3</l-n>Heading</h1>");
 }
 
 // Verify that cleaning removes `contenteditable` from optional content, which
@@ -2535,7 +2574,7 @@ fn test_hydrate_xref_content_not_editable() {
     };
     assert_eq!(
         code_mirror.doc_blocks[1].contents,
-        "<p><xref data-content=\"&amp;lt;span contenteditable=&amp;quot;true&amp;quot;&amp;gt;x&amp;lt;/span&amp;gt;\" contenteditable=false ref=t><a href=#t><span>x</span></a></xref>"
+        "<p><l-n>3</l-n><xref data-content=\"&amp;lt;span contenteditable=&amp;quot;true&amp;quot;&amp;gt;x&amp;lt;/span&amp;gt;\" contenteditable=false ref=t><a href=#t><span>x</span></a></xref>"
     );
 }
 
@@ -2588,10 +2627,10 @@ fn test_hydrate_xref_error_keeps_optional_content() {
     assert_eq!(
         code_mirror.doc_blocks[2].contents,
         concat!(
-            "<p><fragment contenteditable=false id=f></fragment>",
+            "<p><l-n>5</l-n><fragment contenteditable=false id=f></fragment>",
             "<xref contenteditable=false data-content=&amp;lt;em&amp;gt;a&amp;lt;/em&amp;gt; ref=d><span class=cc-error>id \"d\" is defined more than once</span></xref> ",
             "<xref contenteditable=false data-content=&amp;lt;em&amp;gt;b&amp;lt;/em&amp;gt; ref=f><span class=cc-error>id \"f\" names a fragment; a cross-reference must name a target or gather element</span></xref> ",
-            "<xref contenteditable=false data-content=&amp;lt;em&amp;gt;c&amp;lt;/em&amp;gt; ref=nope><span class=cc-error>id \"nope\" not found</span></xref> ",
+            "<l-n>6</l-n><xref contenteditable=false data-content=&amp;lt;em&amp;gt;c&amp;lt;/em&amp;gt; ref=nope><span class=cc-error>id \"nope\" not found</span></xref> ",
             "<xref ref=\"1 2\" contenteditable=false data-content=&amp;lt;em&amp;gt;d&amp;lt;/em&amp;gt;><span class=cc-error>\"1 2\" is not a valid CSS identifier</span></xref> ",
             "<xref contenteditable=false data-content=&amp;lt;em&amp;gt;e&amp;lt;/em&amp;gt;><span class=cc-error>a cross-reference requires a \"ref\" attribute</span></xref>"
         )
@@ -2631,9 +2670,9 @@ fn test_hydrate_gather_same_file() {
     // The fragment renders a backlink to the gather element.
     assert_eq!(
         contents[1],
-        "<p><fragment contenteditable=false id=frag>See <a href=#gath>Gathered</a></fragment>Doc."
+        "<p><l-n>3</l-n><fragment contenteditable=false id=frag>See <a href=#gath>Gathered</a></fragment>Doc."
     );
-    assert_eq!(contents[2], "<p>End.");
+    assert_eq!(contents[2], "<p><l-n>5</l-n>End.");
 }
 
 // Verify that a gather list's copy of a fragment keeps the `contenteditable`
@@ -2659,7 +2698,7 @@ fn test_hydrate_gather_contenteditable() {
     };
     assert_eq!(
         code_mirror.doc_blocks[0].contents,
-        "<p><fragment contenteditable=false id=f>See <a href=#g>Gathered</a></fragment><span contenteditable=true>a</span> <span contenteditable>b</span> <span contenteditable=false>c</span> <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span>"
+        "<p><l-n>1</l-n><fragment contenteditable=false id=f>See <a href=#g>Gathered</a></fragment><span contenteditable=true>a</span> <l-n>2</l-n><span contenteditable>b</span> <span contenteditable=false>c</span> <l-n>3</l-n><span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span>"
     );
     assert_eq!(
         code_mirror.doc_blocks[1].contents,
@@ -2755,7 +2794,7 @@ fn test_hydrate_xref_cross_file() {
     };
     assert_eq!(
         code_mirror.doc_blocks[0].contents,
-        "<p>See <xref contenteditable=false data-content ref=t><a href=a.js#t>Title</a></xref>"
+        "<p><l-n>1</l-n>See <xref contenteditable=false data-content ref=t><a href=a.js#t>Title</a></xref>"
     );
 
     // Change the target's inner HTML, then reprocess the referencing file: the
@@ -2775,7 +2814,7 @@ fn test_hydrate_xref_cross_file() {
     };
     assert_eq!(
         code_mirror.doc_blocks[0].contents,
-        "<p>See <xref contenteditable=false data-content ref=t><a href=a.js#t>New title</a></xref>"
+        "<p><l-n>1</l-n>See <xref contenteditable=false data-content ref=t><a href=a.js#t>New title</a></xref>"
     );
 }
 
@@ -2907,7 +2946,7 @@ fn test_hydrate_fragment_in_markdown() {
         ),
         Ok(build_codechat_for_web(
             MARKDOWN_MODE,
-            "<p><fragment contenteditable=false id=f><span class=cc-error>fragments are not allowed in Markdown documents</span></fragment>",
+            "<p><l-n>1</l-n><fragment contenteditable=false id=f><span class=cc-error>fragments are not allowed in Markdown documents</span></fragment>",
             vec![]
         ))
     );
@@ -2944,7 +2983,7 @@ fn test_hydrate_fragment_without_id() {
                     1,
                     "",
                     "#",
-                    "<p><fragment contenteditable=false><span class=cc-error>a fragment requires an \"id\" attribute</span></fragment>Doc."
+                    "<p><l-n>1</l-n><fragment contenteditable=false><span class=cc-error>a fragment requires an \"id\" attribute</span></fragment>Doc."
                 )]
             ),
             "hydrating {fragment}"
@@ -3023,7 +3062,7 @@ fn test_auto_assign_id() {
     assert_eq!(
         code_mirror.doc_blocks[0].contents,
         format!(
-            "<p>See <xref contenteditable=false data-content ref={id}><a href=a.js#{id}>Title</a></xref>"
+            "<p><l-n>1</l-n>See <xref contenteditable=false data-content ref={id}><a href=a.js#{id}>Title</a></xref>"
         )
     );
 }
@@ -3256,4 +3295,271 @@ fn test_dehydrate_html_1() {
             "
         )
     );
+}
+
+// ### Line marker tests
+//
+// See [line-number-spec.md](../../../line-number-spec.md).
+//
+// Translate `source` as the file `file_name`, returning the HTML of a Markdown
+// document, or each doc block's HTML for a source file.
+fn translate_to_html(
+    // The file's contents.
+    source: &str,
+    // The file's name, whose extension selects the lexer.
+    file_name: &str,
+    // The resulting HTML.
+) -> Vec<String> {
+    let translation =
+        source_to_codechat_for_web(source, Path::new(file_name), 0.0, false, None).unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    if translation.metadata.mode == MARKDOWN_MODE {
+        vec![code_mirror.doc]
+    } else {
+        code_mirror
+            .doc_blocks
+            .into_iter()
+            .map(|doc_block| doc_block.contents)
+            .collect()
+    }
+}
+
+// Verify where markers go in a Markdown document: one per line with inline
+// content, inside the element holding that content.
+#[test]
+fn test_line_markers_markdown() {
+    for (source, html) in [
+        // Prose, a blank line, then a heading.
+        (
+            "First line\nSecond line\n\n# Head\n",
+            "<p><l-n>1</l-n>First line <l-n>2</l-n>Second line<h1><l-n>4</l-n>Head</h1>",
+        ),
+        // The three hard break spellings.
+        (
+            "Two spaces  \nBackslash\\\nTag<br>\nEnd\n",
+            "<p><l-n>1</l-n>Two spaces<br> <l-n>2</l-n>Backslash<br> <l-n>3</l-n>Tag<br> <l-n>4</l-n>End",
+        ),
+        // A list item continued on the next line, then a block quote.
+        (
+            "* item\n  more\n\n> quote\n> more\n",
+            "<ul><li><l-n>1</l-n>item <l-n>2</l-n>more</ul><blockquote><p><l-n>4</l-n>quote <l-n>5</l-n>more</blockquote>",
+        ),
+        // A table whose body row starts with an empty cell, then a task list.
+        (
+            "| a | b |\n| - | - |\n|   | c |\n\n- [ ] task\n",
+            "<table><thead><tr><th><l-n>1</l-n>a<th>b<tbody><tr><td><td><l-n>3</l-n>c</table><ul><li><l-n>5</l-n><input disabled type=checkbox> task</ul>",
+        ),
+        // An image whose alt text spans two lines, then a link whose label
+        // does.
+        (
+            "![alt\ntext](i.png)\n\n[link\ntext](u)\n",
+            "<p><l-n>1</l-n><img alt=\"alt text\" src=i.png><p><l-n>4</l-n><a href=u>link <l-n>5</l-n>text</a>",
+        ),
+    ] {
+        assert_eq!(translate_to_html(source, "foo.md"), [html], "{source}");
+    }
+}
+
+// Verify that lines 3-5 get no marker when they hold a code block or a raw HTML
+// block, and only line 3 does when they hold display math.
+#[test]
+fn test_line_markers_skipped_lines() {
+    for (block, html) in [
+        ("```\ncode\n```", "<pre><code>code\n</code></pre>"),
+        ("<div>\nraw\n</div>", "<div>raw</div>"),
+        (
+            "$$\nx\n$$",
+            "<p><l-n>3</l-n><span class=\"math math-display mceNonEditable\" contenteditable=false>$$ x $$</span>",
+        ),
+    ] {
+        assert_eq!(
+            translate_to_html(&format!("Line 1\n\n{block}\n\nLine 7\n"), "foo.md"),
+            [format!("<p><l-n>1</l-n>Line 1{html}<p><l-n>7</l-n>Line 7")],
+            "{block}"
+        );
+    }
+    // A metadata block must start the document.
+    assert_eq!(
+        translate_to_html("---\ntitle: x\n---\n\nLine 5\n", "foo.md"),
+        ["<p><l-n>5</l-n>Line 5"]
+    );
+}
+
+// Verify that no marker goes inside an element which inline HTML or an HTML
+// block opens and whose text isn't parsed as HTML, or is read by a diagram,
+// until its end tag or the end of the doc block; a tag in an image's `alt`
+// text opens nothing.
+#[test]
+fn test_line_markers_inline_html_text() {
+    for (source, html) in [
+        (
+            "Text <iframe\nsrc=\"x\"></iframe>\nmore\n",
+            "<p><l-n>1</l-n>Text <iframe src=x></iframe> <l-n>3</l-n>more",
+        ),
+        // A line holding only the end tag is an HTML block.
+        (
+            "Text <iframe src=\"x\">\nstill\n</iframe>\n\nMore\n",
+            "<p><l-n>1</l-n>Text <iframe src=x>still</iframe><p><l-n>5</l-n>More",
+        ),
+        // A blank line ends the HTML block which opened the element, not the
+        // element.
+        (
+            "<iframe src=\"x\">\nfallback\n\nstill inside\n</iframe>\n\nAfter\n",
+            "<iframe src=x>fallback <p>still inside</p></iframe><p><l-n>7</l-n>After",
+        ),
+        // The line closes one element and opens another.
+        (
+            "<iframe src=\"a\"></iframe><iframe src=\"b\">\n\nfallback\n</iframe>\n\nAfter\n",
+            "<iframe src=a></iframe><iframe src=b><p>fallback</p></iframe><p><l-n>6</l-n>After",
+        ),
+        // A tag inside one of these elements is its text and opens nothing.
+        (
+            "<script>let s = \"<iframe\";</script>\n\nAfter\n",
+            "<p><l-n>3</l-n>After",
+        ),
+        (
+            "<textarea>\n<iframe src=\"x\"></textarea>\n\nAfter\n",
+            "&lt;iframe src=\"x\"> <p><l-n>4</l-n>After",
+        ),
+        // A tag name ends only at whitespace, `/` or `>`.
+        (
+            "<div>\n<title_x>\n</div>\n\nAfter\n",
+            "<div></div><p><l-n>5</l-n>After",
+        ),
+        (
+            "<wc-mermaid>graph TD\nA-->B\n</wc-mermaid>\n",
+            "<p><l-n>1</l-n><wc-mermaid>graph TD\nA-->B\n</wc-mermaid>",
+        ),
+        (
+            "![<script>](i.png)\n\nLine 3\n",
+            "<p><l-n>1</l-n><img alt=\"<script>\" src=i.png><p><l-n>3</l-n>Line 3",
+        ),
+    ] {
+        assert_eq!(translate_to_html(source, "foo.md"), [html], "{source}");
+    }
+    assert_eq!(
+        translate_to_html(
+            "// See <wc-mermaid>graph TD\nlet x = 1;\n// Next\n",
+            "foo.js"
+        ),
+        [
+            "<p><l-n>1</l-n>See <wc-mermaid>graph TD</wc-mermaid>",
+            "<p><l-n>3</l-n>Next"
+        ]
+    );
+}
+
+// Verify that markers in a source file give the line in the file, counting the
+// code before each doc block.
+#[test]
+fn test_line_markers_source_file() {
+    assert_eq!(
+        translate_to_html(
+            &format!(
+                "{}// Doc one\n// doc two\nlet b = 2;\n// Later\n",
+                "let a = 1;\n".repeat(23)
+            ),
+            "foo.js"
+        ),
+        [
+            "<p><l-n>24</l-n>Doc one <l-n>25</l-n>doc two",
+            "<p><l-n>27</l-n>Later"
+        ]
+    );
+}
+
+// Verify that no marker is copied into a cross-reference's link text, an
+// `<xref>`'s saved optional content (also when it holds another `<xref>`), or
+// a gather list, and that the text after a two-line `<xref>` is marked.
+#[test]
+fn test_line_markers_copies() {
+    assert_eq!(
+        translate_to_html(
+            "# Title {#t}\n\nSee <xref ref=\"t\"></xref> and <xref ref=\"t\">two\nlines</xref> more\n",
+            "foo.md"
+        ),
+        [
+            "<h1 id=t><l-n>1</l-n>Title</h1><p><l-n>3</l-n>See <xref contenteditable=false data-content ref=t><a href=#t>Title</a></xref> and <xref data-content=\"two\nlines\" contenteditable=false ref=t><a href=#t>two lines</a></xref><l-n>4</l-n> more"
+        ]
+    );
+    assert_eq!(
+        translate_to_html(
+            "# Title {#t}\n\nSee <xref ref=\"t\">a <xref ref=\"t\">b</xref>\nc</xref> d\n",
+            "foo.md"
+        ),
+        [
+            "<h1 id=t><l-n>1</l-n>Title</h1><p><l-n>3</l-n>See <xref data-content=\"a &amp;lt;xref ref=&amp;quot;t&amp;quot;&amp;gt;b&amp;lt;/xref&amp;gt;\nc\" contenteditable=false ref=t><a href=#t>a b c</a></xref><l-n>4</l-n> d"
+        ]
+    );
+    assert_eq!(
+        translate_to_html(
+            "# Title {#t}\n\n<xref ref=\"t\">\n<xref ref=\"t\">inner</xref>\n\nouter\n\n</xref>\n\nEnd\n",
+            "foo.md"
+        ),
+        [
+            "<h1 id=t><l-n>1</l-n>Title</h1><xref data-content=\"\n&amp;lt;xref ref=&amp;quot;t&amp;quot;&amp;gt;inner&amp;lt;/xref&amp;gt;\n&amp;lt;p&amp;gt;outer&amp;lt;/p&amp;gt;\n\" contenteditable=false ref=t><a href=#t> inner outer </a></xref><p><l-n>10</l-n>End"
+        ]
+    );
+    assert_eq!(
+        translate_to_html(
+            "// <fragment id=\"f\"></fragment>Fragment prose.\nlet a = 1;\n// <h3 id=\"g\" data-gather=\"f\">Gathered</h3>\n",
+            "foo.js"
+        ),
+        [
+            "<p><l-n>1</l-n><fragment contenteditable=false id=f>See <a href=#g>Gathered</a></fragment>Fragment prose.",
+            "<h3 class=cc-gather data-gather=f id=g>Gathered</h3><div class=cc-gather-items contenteditable=false><p class=cc-gather-item-link>From <a href=#f>foo.js</a>:<div class=cc-fragment-doc><pre class=cc-fragment-indent><span class=cc-line-number>1</span></pre><div class=cc-fragment-doc-contents><p>Fragment prose.</div></div><pre class=cc-fragment-code><span class=cc-line-number>2</span>let a = 1;\n</pre></div>"
+        ]
+    );
+}
+
+// Verify that saving a translated file removes its markers without a trace:
+// the result is the same as saving the translation stripped of markers, and
+// for these sources it is the source itself.
+#[test]
+fn test_line_markers_round_trip() {
+    let line_marker = Regex::new("<l-n>[0-9]+</l-n>").unwrap();
+    let strip = |html: &str| line_marker.replace_all(html, "").into_owned();
+    // Each case: a file name, its source, and what a save writes when that
+    // isn't the source. htmd rewraps a line so that it doesn't start with `2.`.
+    for (file_name, source, rewrapped) in [
+        (
+            "foo.md",
+            "word word word word word word word word word word word word word word word\nboundary <xref ref=\"t\">two</xref>\n\n<h3 id=\"t\">Title</h3>\n",
+            None,
+        ),
+        (
+            "foo.md",
+            "word word word word word word word word word word word word word word word ab\n2. not a list\n",
+            Some(
+                "word word word word word word word word word word word word word word word ab 2.\nnot a list\n",
+            ),
+        ),
+        (
+            "foo.js",
+            "let a = 1;\n// word word word word word word word word word word word word word word\n// boundary\nlet b = 2;\n",
+            None,
+        ),
+    ] {
+        let translation =
+            source_to_codechat_for_web(source, Path::new(file_name), 0.0, false, None).unwrap();
+        let CodeMirrorDiffable::Plain(ref code_mirror) = translation.source else {
+            panic!("No diff!");
+        };
+        let mut stripped = code_mirror.clone();
+        stripped.doc = strip(&stripped.doc);
+        for doc_block in &mut stripped.doc_blocks {
+            doc_block.contents = strip(&doc_block.contents);
+        }
+        let stripped = build_codechat_for_web(
+            &translation.metadata.mode,
+            &stripped.doc,
+            stripped.doc_blocks,
+        );
+        assert_ne!(stripped, translation, "{source}");
+        let saved = codechat_for_web_to_source(&translation).unwrap();
+        assert_eq!(saved, codechat_for_web_to_source(&stripped).unwrap());
+        assert_eq!(saved, rewrapped.unwrap_or(source));
+    }
 }

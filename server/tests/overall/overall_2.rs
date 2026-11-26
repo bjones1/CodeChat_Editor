@@ -500,7 +500,7 @@ async fn test_6_core(
     // Verify the updated text.
     assert_eq!(
         body_content.inner_html().await.unwrap(),
-        "<ul><li>aaa</li></ul><p>b</p>"
+        "<ul><li><l-n>1</l-n>aaa</li></ul><p><l-n>3</l-n>b</p>"
     );
 
     // Get a final cursor update.

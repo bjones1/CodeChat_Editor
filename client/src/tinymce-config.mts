@@ -146,11 +146,12 @@ export const init = async (
             quickbars_selection_toolbar:
                 "bold italic underline codeformat | quicklink h2 h3",
 
-            // Needed to allow custom elements.
+            // Needed to allow custom elements. Without `l-n`, TinyMCE would
+            // drop each line marker but keep its number as visible text.
             extended_valid_elements:
-                "graphviz-graph[scale],wc-mermaid,xref[contenteditable|ref],fragment[contenteditable|following|id]",
+                "graphviz-graph[scale],wc-mermaid,xref[contenteditable|ref],fragment[contenteditable|following|id],l-n",
             // Per the [docs](https://www.tiny.cloud/docs/tinymce/latest/content-filtering/#custom_elements), `~` marks tags as an inline element, not a block element.
-            custom_elements: "graphviz-graph,wc-mermaid,~xref,~fragment",
+            custom_elements: "graphviz-graph,wc-mermaid,~xref,~fragment,~l-n",
 
             // Setting the
             // [context menu](https://www.tiny.cloud/docs/tinymce/latest/contextmenu/#contextmenu)
@@ -181,12 +182,80 @@ export const init = async (
         });
         takeLinkGestures(editor);
         addLinkMenu(editor);
+        handleLineMarkers(editor);
     };
 
     // Use these combined options to
     // [init](https://www.tiny.cloud/docs/tinymce/latest/apis/tinymce.root/#init)
     // TinyMCE.
     return await tinymce.init(combinedOptions);
+};
+
+// Line markers
+// ------------
+//
+// The Server puts a hidden marker before the content of each Markdown line;
+// see [line-number-spec.md](../../line-number-spec.md).
+//
+// When Enter splits a block just before the text of a line, that line's marker
+// stays at the end of the first half. TinyMCE counts the number inside it as
+// content, so a first half holding only markers isn't treated as empty: it
+// gets no `<br>`, so it has no height once saved, and Enter in an empty-looking
+// list item adds an item instead of leaving the list. Move each marker with
+// nothing after it to the second half, which holds the text of its line, and
+// give an emptied first half the `<br>` of an empty block.
+//
+// TinyMCE makes the space at the end of a text node non-breaking when typing
+// near it. A marker ends a text node at each line, so the space which stands
+// for the newline before it would be saved as a non-breaking space; make it a
+// space again in the HTML TinyMCE returns.
+//
+// A copy or cut puts the selected HTML on the clipboard. Leave the markers out
+// of it: their numbers don't fit where the text is pasted, and an editor
+// without the Client's CSS shows them.
+// <fragment id="cc-AZYIpZE6s0"></fragment>
+const handleLineMarkers = (
+    // The editor whose markers are handled.
+    editor: Editor,
+) => {
+    editor.on("NewBlock", ({ newBlock }) => {
+        // When Enter splits a block, the first half stays in place and the
+        // second half becomes `newBlock`.
+        const block = newBlock.previousElementSibling;
+        if (!block) {
+            return;
+        }
+        const rest = editor.dom.createRng();
+        rest.setEnd(block, block.childNodes.length);
+        const trailingMarkers = [...block.querySelectorAll("l-n")].filter(
+            (marker) => {
+                rest.setStartAfter(marker);
+                const after = rest.cloneContents();
+                after.querySelectorAll("l-n").forEach((m) => m.remove());
+                return editor.dom.isEmpty(after);
+            },
+        );
+        if (trailingMarkers.length) {
+            newBlock.prepend(...trailingMarkers);
+            if (editor.dom.isEmpty(block) && !block.querySelector("br")) {
+                editor.dom.add(block, "br", { "data-mce-bogus": "1" });
+            }
+        }
+    });
+    // TinyMCE builds the clipboard's HTML from the selection's contents. Its
+    // plain text comes from `innerText`, which already leaves out hidden
+    // markers, so a marker typed as text stays there.
+    editor.on("GetContent", (event) => {
+        if (typeof event.content === "string") {
+            event.content = event.content.replace(
+                /(?:&nbsp;|\u00a0)(?=<l-n>)/g,
+                " ",
+            );
+        }
+        if (event.selection && event.format === "html") {
+            event.content = event.content.replace(/<l-n>\d+<\/l-n>/g, "");
+        }
+    });
 };
 
 // Following links
