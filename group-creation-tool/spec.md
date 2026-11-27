@@ -125,7 +125,9 @@ search:
 2. **Assign projects.** Given the groups, assign projects to maximize the sum of
    `w · P` over all students; the teammate part does not depend on projects.
    This is a weighted assignment problem with `c` copies of each project, solved
-   exactly with `scipy.optimize.linear_sum_assignment`.
+   exactly with `scipy.optimize.linear_sum_assignment`. The new project
+   assignment replaces the current one only if it makes the assignment better,
+   so steps 2 and 3 cannot undo each other.
 3. **Improve members.** With projects fixed, consider every swap of two
    students in different groups, in roster order. Apply a swap whenever it
    makes the assignment better, and repeat until a full pass makes no swap.
