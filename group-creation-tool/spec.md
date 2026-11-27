@@ -114,9 +114,11 @@ the student's scores for the other members of the group, or 0 in a group of one
 The **quality** of an assignment is the sum of all students' satisfaction. One
 assignment is **better** than another if its quality is higher, or if the
 qualities are equal and its least satisfied student is more satisfied. Both
-values are rounded to 9 decimal places before comparing, so floating-point
-noise never decides a comparison and "better" stays a strict order: no chain
-of better assignments can lead back to where it started.
+values are rounded to 9 decimal places before comparing, so "better" stays a
+strict order: no chain of better assignments can lead back to where it started.
+Rounding removes almost all floating-point noise; a value lying on a rounding
+boundary can still tip the choice between two nearly equal assignments, but
+never prevents the search from ending.
 
 ### Algorithm
 

@@ -15,7 +15,7 @@ GitHub userid: timikxd
 #### Contributions
 
 Set up the fork and branch, wrote the specification draft (sign-in, surveys,
-scoring and the grouping algorithm), applied the round 4 fixes from the pull
+scoring and the grouping algorithm), applied the round 4 and 5 fixes from the pull
 request review, and assembled this submission.
 
 #### Build and run test
@@ -30,15 +30,15 @@ This draft contains only the specification of a new app (`group-creation-tool/`)
 | 2     | 3        | Project assignment replaced only when it improves the result, so the search cannot cycle (2 findings rejected) |
 | 3     | 2        | No changes: both findings trivial and rejected |
 | 4     | 4        | CodeRabbit findings on the PR, verified with Claude: comparisons round to 9 decimals so "better" is a strict order and the search terminates; bound accounts matched before userids; scoring described as a shared −1…1 scale; step 2's tie-break limitation stated |
+| 5     | 1        | Trivial wording fix: rounding is described as removing almost all floating-point noise, not all of it; strict order and termination unchanged |
 
 #### Last specification review
 
-Prompting Claude Opus 5.5, high effort, with `Check each of these review comments against group-creation-tool/spec.md; say whether it is correct and propose the smallest fix.` on the four CodeRabbit comments on pull request #162 produced the following output (round 4, full text in [spec-review-round-4.md](spec-review-round-4.md)).
+Prompting Claude Opus 5.5, high effort, with `Check each of these review comments against group-creation-tool/spec.md; say whether it is correct and propose the smallest fix.` on the CodeRabbit review of round 4's changes on pull request #162 produced the following output (round 5, full text in [spec-review-round-5.md](spec-review-round-5.md)).
 
-1. **HIGH**: With a 10⁻⁹ tolerance, "better" is not transitive (A > B > C > A is possible), so the termination claim did not hold. Fixed: values are rounded to 9 decimal places before comparing, making "better" a strict order.
-2. **HIGH**: A student whose sign-in name changed was rejected before the `tid`/`oid` match. Fixed: bound entries are looked up first.
-3. **MEDIUM**: "Same total influence" is false (one preferred item totals 1, two total 1.5). Fixed: described as a shared scale from 1 to −1.
-4. **MEDIUM**: Step 2 ignores the tie-break among equal-sum project assignments. Fixed by stating this limitation of the heuristic.
+1. **LOW**: "Floating-point noise never decides a comparison" overstated the rounding rule: values on either side of a rounding boundary still round differently. Fixed: rounding is described as removing almost all noise; a boundary case can only tip the choice between two nearly equal assignments, and the strict order and termination are unaffected.
+
+Only this trivial wording issue remained, so the review stopped here.
 
 ### Kurmanbek Beksultan
 
@@ -61,15 +61,15 @@ This draft contains only the specification of a new app (`group-creation-tool/`)
 | 2     | 3        | Project assignment replaced only when it improves the result, so the search cannot cycle (2 findings rejected) |
 | 3     | 2        | No changes: both findings trivial and rejected |
 | 4     | 4        | CodeRabbit findings on the PR, verified with Claude: comparisons round to 9 decimals so "better" is a strict order and the search terminates; bound accounts matched before userids; scoring described as a shared −1…1 scale; step 2's tie-break limitation stated |
+| 5     | 1        | Trivial wording fix: rounding is described as removing almost all floating-point noise, not all of it; strict order and termination unchanged |
 
 #### Last specification review
 
-Prompting Claude Opus 5.5, high effort, with `Check each of these review comments against group-creation-tool/spec.md; say whether it is correct and propose the smallest fix.` on the four CodeRabbit comments on pull request #162 produced the following output (round 4, full text in [spec-review-round-4.md](spec-review-round-4.md)).
+Prompting Claude Opus 5.5, high effort, with `Check each of these review comments against group-creation-tool/spec.md; say whether it is correct and propose the smallest fix.` on the CodeRabbit review of round 4's changes on pull request #162 produced the following output (round 5, full text in [spec-review-round-5.md](spec-review-round-5.md)).
 
-1. **HIGH**: With a 10⁻⁹ tolerance, "better" is not transitive (A > B > C > A is possible), so the termination claim did not hold. Fixed: values are rounded to 9 decimal places before comparing, making "better" a strict order.
-2. **HIGH**: A student whose sign-in name changed was rejected before the `tid`/`oid` match. Fixed: bound entries are looked up first.
-3. **MEDIUM**: "Same total influence" is false (one preferred item totals 1, two total 1.5). Fixed: described as a shared scale from 1 to −1.
-4. **MEDIUM**: Step 2 ignores the tie-break among equal-sum project assignments. Fixed by stating this limitation of the heuristic.
+1. **LOW**: "Floating-point noise never decides a comparison" overstated the rounding rule: values on either side of a rounding boundary still round differently. Fixed: rounding is described as removing almost all noise; a boundary case can only tip the choice between two nearly equal assignments, and the strict order and termination are unaffected.
+
+Only this trivial wording issue remained, so the review stopped here.
 
 ### Sagynbayev Alisher
 
@@ -92,13 +92,13 @@ This draft contains only the specification of a new app (`group-creation-tool/`)
 | 2     | 3        | Project assignment replaced only when it improves the result, so the search cannot cycle (2 findings rejected) |
 | 3     | 2        | No changes: both findings trivial and rejected |
 | 4     | 4        | CodeRabbit findings on the PR, verified with Claude: comparisons round to 9 decimals so "better" is a strict order and the search terminates; bound accounts matched before userids; scoring described as a shared −1…1 scale; step 2's tie-break limitation stated |
+| 5     | 1        | Trivial wording fix: rounding is described as removing almost all floating-point noise, not all of it; strict order and termination unchanged |
 
 #### Last specification review
 
-Prompting Claude Opus 5.5, high effort, with `Check each of these review comments against group-creation-tool/spec.md; say whether it is correct and propose the smallest fix.` on the four CodeRabbit comments on pull request #162 produced the following output (round 4, full text in [spec-review-round-4.md](spec-review-round-4.md)).
+Prompting Claude Opus 5.5, high effort, with `Check each of these review comments against group-creation-tool/spec.md; say whether it is correct and propose the smallest fix.` on the CodeRabbit review of round 4's changes on pull request #162 produced the following output (round 5, full text in [spec-review-round-5.md](spec-review-round-5.md)).
 
-1. **HIGH**: With a 10⁻⁹ tolerance, "better" is not transitive (A > B > C > A is possible), so the termination claim did not hold. Fixed: values are rounded to 9 decimal places before comparing, making "better" a strict order.
-2. **HIGH**: A student whose sign-in name changed was rejected before the `tid`/`oid` match. Fixed: bound entries are looked up first.
-3. **MEDIUM**: "Same total influence" is false (one preferred item totals 1, two total 1.5). Fixed: described as a shared scale from 1 to −1.
-4. **MEDIUM**: Step 2 ignores the tie-break among equal-sum project assignments. Fixed by stating this limitation of the heuristic.
+1. **LOW**: "Floating-point noise never decides a comparison" overstated the rounding rule: values on either side of a rounding boundary still round differently. Fixed: rounding is described as removing almost all noise; a boundary case can only tip the choice between two nearly equal assignments, and the strict order and termination are unaffected.
+
+Only this trivial wording issue remained, so the review stopped here.
 
