@@ -2256,6 +2256,70 @@ fn code_doc_block_lines(
     }
 }
 
+/// Locate the top-level elements of a Markdown document which a fragment
+/// encloses. A Markdown document has no code/doc blocks to count, so its
+/// sections play their role: a fragment begins with the top-level element
+/// containing its tag and ends just before the next heading which closes the
+/// section the fragment begins in -- a heading of the same or a higher level.
+/// Subheadings therefore belong to the fragment. A fragment placed in a heading
+/// encloses that heading's whole section; one placed before the document's
+/// first heading ends at the first heading of any level.
+fn markdown_fragment_range(
+    // The children of the Markdown document's root element.
+    top_level: &[Rc<Node>],
+    // The `<fragment>` element.
+    fragment: &Rc<Node>,
+    // The indices into `top_level` of the enclosed elements, or `None` if the
+    // fragment isn't in `top_level`.
+) -> Option<Range<usize>> {
+    let start = top_level
+        .iter()
+        .position(|node| contains_node(node, fragment))?;
+    // A heading of this level or lower closes the fragment's section. Before
+    // the first heading, every heading does.
+    let section_level = top_level[..=start]
+        .iter()
+        .rev()
+        .find_map(heading_level)
+        .unwrap_or(6);
+    let end = top_level
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .find(|(_, node)| heading_level(node).is_some_and(|level| level <= section_level))
+        .map_or(top_level.len(), |(index, _)| index);
+    Some(start..end)
+}
+
+/// The level of a heading element: 1 for `<h1>` through 6 for `<h6>`.
+fn heading_level(
+    // The node to examine.
+    node: &Rc<Node>,
+    // The heading's level, or `None` if `node` isn't a heading.
+) -> Option<u8> {
+    get_node_tag_name(node)?
+        .strip_prefix('h')?
+        .parse::<u8>()
+        .ok()
+        .filter(|level| (1..=6).contains(level))
+}
+
+/// Determine whether `descendant` is `node` or lies inside it.
+fn contains_node(
+    // The node to search.
+    node: &Rc<Node>,
+    // The node to search for.
+    descendant: &Rc<Node>,
+    // True if `descendant` was found.
+) -> bool {
+    Rc::ptr_eq(node, descendant)
+        || node
+            .children
+            .borrow()
+            .iter()
+            .any(|child| contains_node(child, descendant))
+}
+
 /// Phase 3 of hydration: mark each gather element with the `cc-gather` class
 /// and insert its list of gathered fragment contents as its next sibling. This
 /// must run after `store_fragment_contents`, so that same-file fragments'
