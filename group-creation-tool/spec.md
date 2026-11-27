@@ -52,11 +52,12 @@ stops students from submitting; the organizer can still form groups.
 Student flow
 ------------
 
-A student follows the link and signs in. If the account's userid is not on the
-roster, the app shows an error and stores nothing. On the first successful
-sign-in, the app binds the roster entry to the account's `tid`/`oid`. Later
-sign-ins are matched by `tid`/`oid`, so a later change of the sign-in name
-does not lock the student out.
+A student follows the link and signs in. The app first looks for a roster entry
+already bound to the account's `tid`/`oid`. If there is none, it looks for an
+unbound entry whose userid matches the account's sign-in name and binds that
+entry to the `tid`/`oid`. If neither exists, the app shows an error and stores
+nothing. Because bound entries are found first, a later change of the sign-in
+name does not lock the student out.
 
 The student then sees two lists: the survey's projects, and the other students
 on the roster (by display name if they have signed in, otherwise by userid).
@@ -98,8 +99,9 @@ list:
 * the item at position `j` (from 1) of `b` not-preferred items scores `−j / b`,
   from `−1 / b` down to −1 for the least wanted item.
 
-Dividing by the list length gives every student the same total influence,
-however many items they rank.
+Dividing by the list length puts every student's scores on the same scale: the
+top preferred item always scores 1 and the least wanted item always scores −1,
+however many items the student ranks.
 
 A student's **satisfaction** with an assignment is
 
@@ -111,8 +113,10 @@ the student's scores for the other members of the group, or 0 in a group of one
 
 The **quality** of an assignment is the sum of all students' satisfaction. One
 assignment is **better** than another if its quality is higher, or if the
-qualities are equal and its least satisfied student is more satisfied. Values
-are compared with a tolerance of 10⁻⁹, so rounding never decides a comparison.
+qualities are equal and its least satisfied student is more satisfied. Both
+values are rounded to 9 decimal places before comparing, so floating-point
+noise never decides a comparison and "better" stays a strict order: no chain
+of better assignments can lead back to where it started.
 
 ### Algorithm
 
@@ -125,9 +129,11 @@ search:
 2. **Assign projects.** Given the groups, assign projects to maximize the sum of
    `w · P` over all students; the teammate part does not depend on projects.
    This is a weighted assignment problem with `c` copies of each project, solved
-   exactly with `scipy.optimize.linear_sum_assignment`. The new project
-   assignment replaces the current one only if it makes the assignment better,
-   so steps 2 and 3 cannot undo each other.
+   exactly with `scipy.optimize.linear_sum_assignment`. When several project
+   assignments reach the same sum, the solver's choice is used without applying
+   the tie-break; the search is a heuristic and does not promise the best
+   possible result. The new project assignment replaces the current one only if
+   it makes the assignment better, so steps 2 and 3 cannot undo each other.
 3. **Improve members.** With projects fixed, consider every swap of two
    students in different groups, in roster order. Apply a swap whenever it
    makes the assignment better, and repeat until a full pass makes no swap.
