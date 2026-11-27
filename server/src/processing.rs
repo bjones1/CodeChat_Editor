@@ -1118,7 +1118,7 @@ pub fn source_to_codechat_for_web(
             //    outdated.
             store_fragment_contents(
                 &walk_context,
-                Some((&code_doc_block_arr, &doc_block_html)),
+                FragmentSource::CodeDocBlocks(&code_doc_block_arr, &doc_block_html),
                 &cache,
             );
             // 6. Hydrate gather lists, now that every fragment's content --
@@ -1541,6 +1541,22 @@ pub fn dom_to_html(dom: &Rc<Node>) -> io::Result<String> {
     Ok(html_out)
 }
 
+/// Serialize a node, including the node itself, to an HTML string -- the node's
+/// outer HTML.
+fn node_outer_html(
+    // The node to serialize.
+    node: &Rc<Node>,
+    // Its HTML.
+) -> io::Result<String> {
+    let so = SerializeOpts {
+        traversal_scope: TraversalScope::IncludeNode,
+        ..Default::default()
+    };
+    let mut bytes = vec![];
+    serialize(&mut bytes, &SerializableHandle::from(node.clone()), so)?;
+    String::from_utf8(bytes).map_err(io::Error::other)
+}
+
 /// Serialize a node's children back to an HTML string -- the node's inner HTML.
 /// This defines the contents of a target or gather element stored in the cache.
 fn node_inner_html(node: &Rc<Node>) -> io::Result<String> {
@@ -1685,7 +1701,8 @@ fn contains_sentinel(
 fn hydrate_html(html: &str, file: &Path, cache: &Arc<Mutex<Cache>>) -> io::Result<String> {
     let dom = nodes_to_dom(parse_doc_block(html)?)?;
     let (dom, walk_context) = hydrate_dom(dom, file, cache, true)?;
-    store_fragment_contents(&walk_context, None, cache);
+    let top_level = get_dom_root(&dom).children.borrow().clone();
+    store_fragment_contents(&walk_context, FragmentSource::Markdown(&top_level), cache);
     hydrate_gathers(&walk_context, cache)?;
     dom_to_html(&dom)
 }
@@ -2074,16 +2091,26 @@ fn fragment_backlinks(
     Ok(children)
 }
 
+/// What a file's fragments enclose, which differs between source files and
+/// Markdown documents.
+#[derive(Clone, Copy)]
+enum FragmentSource<'a> {
+    /// A source file's code/doc blocks, paired with a map from the index of
+    /// each doc block in that slice to its hydrated HTML.
+    CodeDocBlocks(&'a [CodeDocBlock], &'a HashMap<usize, &'a str>),
+    /// The top-level elements of a hydrated Markdown document; see
+    /// `markdown_fragment_range`.
+    Markdown(&'a [Rc<Node>]),
+}
+
 /// Phase 2 of hydration: store each fragment's content in the cache, which
 /// marks the files containing gather elements listing changed fragments as
 /// outdated.
 fn store_fragment_contents(
     // The walk results from `hydrate_dom`.
     walk_context: &WalkContext,
-    // The file's code/doc blocks, paired with a map from the index of each doc
-    // block in that slice to its hydrated HTML. `None` for Markdown documents,
-    // which have no code/doc blocks.
-    blocks: Option<(&[CodeDocBlock], &HashMap<usize, &str>)>,
+    // What this file's fragments enclose.
+    source: FragmentSource,
     // The cache for the project containing this file.
     cache: &Arc<Mutex<Cache>>,
 ) {
@@ -2100,12 +2127,15 @@ fn store_fragment_contents(
         }
         let content = if let Some(message) = &fragment.error {
             error_html(message)
-        } else if let Some((code_doc_blocks, chunks)) = blocks {
-            render_fragment_content(fragment, walk_context, code_doc_blocks, chunks)
         } else {
-            // TODO: render the elements a Markdown fragment encloses; remove
-            // this once Markdown fragment boundaries are implemented.
-            String::new()
+            match source {
+                FragmentSource::CodeDocBlocks(code_doc_blocks, chunks) => {
+                    render_fragment_content(fragment, walk_context, code_doc_blocks, chunks)
+                }
+                FragmentSource::Markdown(top_level) => {
+                    render_markdown_fragment_content(fragment, walk_context, top_level)
+                }
+            }
         };
         cache_guard.update_fragment_content(&walk_context.path, &fragment.id, content);
     }
@@ -2254,6 +2284,44 @@ fn code_doc_block_lines(
         // endings inclusively rather than counting newlines.
         CodeDocBlock::CodeBlock(code) => code.split_inclusive('\n').count(),
     }
+}
+
+/// Render one Markdown fragment's content: the hydrated HTML of the top-level
+/// elements it encloses, cleaned per the cache spec. Unlike a source file's
+/// fragment, this has no line numbers or indents to reproduce -- a Markdown
+/// document's layout is its rendered HTML.
+fn render_markdown_fragment_content(
+    // The fragment to render.
+    fragment: &FragmentHydration,
+    // The walk results, which locate the document's gather elements.
+    walk_context: &WalkContext,
+    // The top-level elements of the hydrated document.
+    top_level: &[Rc<Node>],
+    // The fragment's content, rendered as HTML.
+) -> String {
+    let Some(range) = markdown_fragment_range(top_level, &fragment.node) else {
+        return String::new();
+    };
+    let enclosed = &top_level[range];
+    // As in a source file, a fragment may not contain a gather element; see
+    // `render_fragment_content`.
+    if walk_context
+        .gathers
+        .iter()
+        .any(|gather| enclosed.iter().any(|node| contains_node(node, gather)))
+    {
+        return error_html("a fragment may not contain a gather element");
+    }
+    let mut html = String::new();
+    for node in enclosed {
+        match node_outer_html(node) {
+            Ok(node_html) => html.push_str(&node_html),
+            Err(err) => return error_html(&err.to_string()),
+        }
+    }
+    // Cleaning also removes each `<fragment>` along with its backlinks, which
+    // hydration has already placed in the DOM.
+    CLEAN_FRAGMENT_HTML.clean(&html).to_string()
 }
 
 /// Locate the top-level elements of a Markdown document which a fragment
