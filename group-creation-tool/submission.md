@@ -29,10 +29,11 @@ is not directly related to the project, and only used for pull request tracking.
 
 #### Specification review rounds
 
-| Round | Findings                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Main Changes Made                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Rated 7/10; 25 findings in total. <strong>High:</strong> teammate scoring contradicts the "no extra weight" claim, Unspecified ordering rules conflict, teammate privacy can't be guaranteed, default group count gives solo groups when projects outnumber students, userid relies on a mutable sign-in claim. <strong>Medium:</strong> deleted-session message vs. deleting all data, two-tab save rule, repeatability vs. time limit, stale results after option changes. <strong>Low:</strong> 7 vague terms and minor gaps (over-long names, CSV, retention, terminology). Expected results table verified correct.                                                                                                                                                                                                                                                                                                                        | Fixed every finding except the 2 struck through below and the tie-break part of item 9, plus 2 findings from CodeRabbit's review of the pull request. Group size is now about √S (an organizer option, at least 2), projects are spread evenly and a project can have several groups, and the teammate part of satisfaction is scaled to −1…1. Results no longer show the score or teammate counts, and the privacy promise now covers only showing teammate preferences. Unspecified always keeps list order. Added Rename, filter fields, and move to top or bottom. Students are matched by sign-in name or email, then by account. Added automatic save retries, last-save-wins across tabs, out-of-date results after option changes, 365-day retention, and testable timings and browser versions. Added Expected results rows and a teammate-part table, all rechecked by brute force. |
-| 2     | Rated 8/10; 20 findings in total. <strong>High:</strong> not-preferred share has the wrong sign as written, CSV example needs 3 groups from 4 students (impossible), group size 1 divides by zero, matching on the email claim lets one person pass as another and lock out the real student. <strong>Medium:</strong> closed-session save rejection loops on retry, a stale tab can restore preferences for a removed and re-added entry, privacy wording contradicts itself, "group size" isn't the actual size, organizer identity is undefined, the 60-second limit names no machine, the ≤8-student test oracle is unbounded in projects. <strong>Low:</strong> 9 vague terms ("last change", "changes it", rounding of halves, "letter" in file names, userid syntax, separators, title trimming, Rename collisions, propagation of Close/Reopen/Delete). Expected results table and default group sizes verified correct by brute force. | <br>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Round | Findings | Main Changes Made |
+| --- | --- | --- |
+| 1 | Rated 7/10; 25 findings in total. **High:** teammate scoring contradicts the "no extra weight" claim, Unspecified ordering rules conflict, teammate privacy can't be guaranteed, default group count gives solo groups when projects outnumber students, userid relies on a mutable sign-in claim. **Medium:** deleted-session message vs. deleting all data, two-tab save rule, repeatability vs. time limit, stale results after option changes. **Low:** 7 vague terms and minor gaps (over-long names, CSV, retention, terminology). Expected results table verified correct. | Fixed every finding except the 2 struck through below and the tie-break part of item 9, plus 2 findings from CodeRabbit's review of the pull request. Group size is now about √S (an organizer option, at least 2), projects are spread evenly and a project can have several groups, and the teammate part of satisfaction is scaled to −1…1. Results no longer show the score or teammate counts, and the privacy promise now covers only showing teammate preferences. Unspecified always keeps list order. Added Rename, filter fields, and move to top or bottom. Students are matched by sign-in name or email, then by account. Added automatic save retries, last-save-wins across tabs, out-of-date results after option changes, 365-day retention, and testable timings and browser versions. Added Expected results rows and a teammate-part table, all rechecked by brute force. |
+| 2 | Rated 8/10; 20 findings in total. **High:** not-preferred share has the wrong sign as written, CSV example needs 3 groups from 4 students (impossible), group size 1 divides by zero, matching on the email claim lets one person pass as another and lock out the real student. **Medium:** closed-session save rejection loops on retry, a stale tab can restore preferences for a removed and re-added entry, privacy wording contradicts itself, "group size" isn't the actual size, organizer identity is undefined, the 60-second limit names no machine, the ≤8-student test oracle is unbounded in projects. **Low:** 9 vague terms ("last change", "changes it", rounding of halves, "letter" in file names, userid syntax, separators, title trimming, Rename collisions, propagation of Close/Reopen/Delete). Expected results table and default group sizes verified correct by brute force. | Fixed the 11 High and Medium findings and CodeRabbit's 2 comments on the pull request, which repeat items 1 and 3; left the 9 Low vague terms as they are. The not-preferred share divides by the size of the most negative sum, and both shares are 0 for a student alone in a group. The CSV example now has 6 students in 3 groups. Students are matched on sign-in name only, not email, and organizers are recognized by their account. A save refused because the session closed is final, and a save from a stale page never applies to a re-added entry. The privacy rule says "number" instead of "figure". The option is renamed "Minimum group size", with sizes from *k* to under 2*k*. Forming runs on the server, survives a page reload, and its 60-second limit names a 2-core server. The small-class acceptance test is limited to 4 projects. Expected results rechecked by brute force. |
+| 3 | Rated 9/10; 15 new findings in total, plus the 9 Low vague terms carried over from round 2. **Medium:** "after the session closed" can be read as refusing every change even after a reopen, saves refused because the session was deleted or the student was removed still retry forever, an extra Unspecified teammate lowers the teammate part, the spec doesn't require exact score comparison (floating-point ties break "best", "not improvable" and the acceptance test), "Repeatable" has no version boundary. **Low:** a "fewer than *k* students" clause that can never apply, dragging vs. "goes to its end", 6 vague terms (moves while filtered, how list edits are applied, editing the title, "out of date", the 2-core server, page speed including sign-in), slow correction of mismatched sign-in names, no quotas on sessions. Expected results table, teammate-part table and default group sizes verified correct by brute force. | |
 
 #### Last specification review
 
@@ -41,131 +42,127 @@ desktop app.
 
 Prompt:
 
-> Review a specification at @group-creation-tool/specification.md . Rate it from
-> 1 to 10. Do not modify the file. Find logical inconsistencies, vague terms,
-> architectural mismatch.
+> Review a specification at @group-creation-tool/specification.md .
 
 Output (line numbers refer to [specification.md](specification.md) as it was
 reviewed, before this round's changes; strikethrough marks findings judged
 incorrect):
 
-I'd rate it **8/10**, up from 7 in round 1. Most of round 1's findings are fixed
-and the scoring model is now tight. I brute-forced all 13 Expected results rows.
-Each one gives exactly the stated groups and score, and each has exactly one
-best assignment. The default group sizes for 4–7, 50 and 500 students also match
-the text. Three things keep it from a 9: a sign error in the teammate formula, a
-CSV example that the spec's own rules can't produce, and an identity rule that
-lets one person pass as another.
+I'd rate it **9/10**, up from 8 in round 2. All the High and Medium findings
+from round 2 are fixed, and the fixes don't contradict each other. I
+brute-forced all 13 Expected results rows with exact fractions. Each one gives
+exactly the stated groups and score, and each has exactly one best assignment.
+All 5 rows of the teammate-part table come out as stated. The default sizes
+for 4–9, 13, 50 and 500 students match the text. What keeps it from a 10 is
+mostly the edges of the save rules and one hidden decision about how scores
+are compared. I didn't modify the file.
 
 ##### Logical inconsistencies
 
-1. **The not-preferred share has the wrong sign as written** (lines 241–247).
-   The share is "the sum of the values … divided by the largest sum", and the
-   not-preferred share is "worked out the same way". For not-preferred teammates
-   both of those sums are negative, so dividing one by the other gives a
-   positive number. Taken literally, table row 4 gives <strong>+2/3</strong>
-   instead of −2/3, and row 5 gives **4/3** instead of −2/3. The text needs
-   "divided by the absolute value of" (or "by the size of") the largest sum. The
-   table and the Expected results only come out right with that reading.
-2. **The CSV example can't happen** (lines 349–358). It shows 4 students in 3
-   groups. But G = ⌊4/*k*⌋ gives 4, 2, 1, 1 for *k* = 1…4, so 3 groups is
-   impossible with 4 students. Use 5 or 6 students, or 2 groups.
-3. **Group size 1 divides by zero** (lines 200 and 239–248). *k* can be 1, which
-   leaves *m* = 0 other members. The denominator is then "the sum of the first 0
-   values", which is 0. "An empty category's share is 0" covers an empty
-   category, not a group with no other members.
-4. **A save rejected because the session closed collides with the retry rule**
-   (lines 165–167 and 178–180). "While a save is failing, the page retries every
-   10 seconds." A save refused because the session is Closed counts as failing,
-   so the page would retry forever, keep the leave-page warning on, and could
-   succeed later if the organizer reopens. Say that a closed-session refusal is
-   final and the page switches to read-only.
-5. **A stale tab can bring back preferences that should have been dropped**
-   (lines 96–102, 171–174 and 409–412). "Each save replaces all of the student's
-   saved preferences." Suppose the organizer removes project `Foo` and adds it
-   again; it is now a new entry that "starts over". A student page loaded before
-   that edit still ranks the old `Foo`. Its next save can attach that ranking to
-   the new `Foo` unless saves are checked against the current list version.
-6. **The privacy rule contradicts itself** (lines 184–191). "No page or file
-   shows … any figure computed from them", yet the groups are computed from
-   teammate preferences and are shown. The next paragraph admits this. Say "no
-   figure other than the groups themselves".
-7. <strong>The "group size" isn't the size of a group.</strong> With 13 students
-   and *k* = 7, G = ⌊13/7⌋ = 1, so the organizer gets one group of 13. The real
-   size ranges from *k* up to almost 2*k*−1. The help text should say *k* is the
-   minimum size, or the control should be renamed.
+1. **"After the session closed" can be read as "ever after"** (lines 184–187).
+   Once a session has been closed even once, every later change reaches the
+   tool "after the session closed". Read literally, that includes changes made
+   after the session is reopened. It also doesn't say what happens to a change
+   made before a Close that arrives only after the Reopen, for example after a
+   network outage. A clearer wording: "a change that reaches the tool while the
+   session is Closed is refused". The spec should also say whether a read-only
+   page becomes editable again when the session is reopened.
+2. **Saves refused for other reasons still retry forever** (lines 166–169).
+   Round 2's fix covers only a Closed session. A save can also be refused
+   because:
+   * the session was deleted;
+   * the student was removed from the list;
+   * the student was removed and added again, so their entry is a new one and
+     "*not signed in*".
+
+   Each of these falls under "while a save is failing, the page retries every
+   10 seconds". The page would retry forever and keep the leave-page warning
+   on. In the third case, the rule on line 176 ("never applies to an entry that
+   was added after the page last loaded") is about the entries a save mentions.
+   It doesn't say whether a stale page can save for the student's own new
+   entry.
+3. **Unspecified isn't neutral for teammates** (lines 251–261). Unspecified is
+   worth 0, but adding an Unspecified teammate can lower a student's score.
+   Take a student with Preferred `b`, `c`, `d`:
+   * in a group with `b` and `c`, their preferred share is
+     (1 + 2/3)/(1 + 2/3) = **1**;
+   * with an extra Unspecified member `x` it is (5/3)/2 = **5/6**.
+
+   The same extra member softens a not-preferred penalty from −1 to −5/6. This
+   only happens when the category holds more than *m* items. A student who
+   lists just `b` gets 1 either way. So the scoring tends to put students with
+   long lists into the smaller groups. If that's intended, say so; if not,
+   scale the shares by the group's best possible sum.
+4. **"Unless there are fewer than *k* students in all" can never apply** (line
+   216). *k* is limited to 1…*S* (line 207) and is clamped when the list
+   changes, so *S* ≥ *k* always holds.
+5. **Dragging conflicts with "goes to its end"** (lines 152–156). An item moved
+   into Preferred or Not preferred goes to the end, yet "every move can be made
+   by dragging". Dragging normally drops an item where you let go. Say which
+   one wins.
 
 ##### Vague terms
 
-* <strong>"Last change"</strong> (line 33): deletion comes 365 days after the
-  last change. Does a student's save, a sign-in, or an organizer just viewing
-  the session count?
-* <strong>"Until the organizer changes it"</strong> (line 202): does typing the
-  default value into the field count as a change?
-* **Number fields** (lines 282–284): "rounded to the nearest whole number"
-  doesn't say how halves round. Line 201 does say it for √*S*.
-* **File name** (line 334): does "a letter" mean ASCII letters only, or Unicode
-  letters? That decides whether `Проект` keeps its letters or becomes `______`.
-* **Userid syntax** (lines 66–67): `a@b.` and `a@.edu` both pass ("contains at
-  least one `.`"). The case-insensitive comparison (line 19) also doesn't say
-  whether it uses full Unicode case folding.
-* **Separators** (line 58): semicolons and tabs aren't separators. A list pasted
-  from Outlook (`Jane Doe <jane@uni.edu>;`) is dropped entry by entry.
-* **Title** (line 57): trimming is stated only for list entries, so a title made
-  only of spaces seems valid.
-* **Rename collisions** (lines 104–108): what happens when a project or userid
-  is renamed to one already on the list, ignoring case? Also, the lists are
-  edited "as text", but Rename is a per-entry action; how the textarea and the
-  status table coexist isn't described. After a case-only edit, it's unclear
-  whether the CSV's userid "as entered" (line 342) uses the new or the original
-  casing. If one account's sign-in name matches one entry and its email matches
-  another (lines 122–128), which userid gets linked?
-* <strong>Propagation of Close, Reopen, Delete and removal:</strong> list edits
-  reach open student pages "within a minute" (line 410), but nothing says how
-  fast a student page notices a Close, a Reopen, a deletion, or that the student
-  was removed. Nor does the spec say what happens if the organizer reopens the
-  session, edits the lists or changes the options while groups are being formed
-  (lines 293–297).
+* **Moves while filtered** (lines 157–158). It isn't clear whether "up one
+  place" moves past items the filter hides, or where a dragged item lands
+  between two visible items that have hidden ones between them. It also
+  doesn't say whether the filter ignores case.
+* **List edits on the session page** (lines 97–111). Nothing says how an edit
+  is applied: is there an Apply button, or is it saved on blur? Nor does it say
+  what happens when an edit breaks the limits, such as 0 students or 501. At
+  setup, **Create** is simply unavailable, but the session page has no
+  equivalent.
+* **Title after creation.** The spec doesn't say whether the title can be
+  edited, and it decides the CSV file name.
+* **"Out of date"** (lines 299–302). If an option is changed and then set back
+  to the value used for forming, are the results still out of date?
+* **"2 processor cores"** (line 427) still names no processor speed or
+  generation, so the 60-second limit can't be tested exactly.
+* **Page speed** (line 450): it isn't clear whether "shows its content within 2
+  seconds" includes the Microsoft sign-in redirect, which the tool doesn't
+  control.
+* **Carried over from round 2**, left open on purpose: "last change", "changes
+  it", rounding of halves, "letter" in file names, userid syntax and case
+  folding, separators, title trimming, Rename collisions, and how fast Close,
+  Reopen, Delete and removal reach open pages. Two of these now matter more.
+  Reopening or editing during forming is undefined. And how a student page
+  learns of a Reopen affects item 1.
 
 ##### Architectural mismatch
 
-* **Matching on the email claim lets one person pass as another** (lines 122–124
-  and 398). Anyone with any work or school account can sign in, and the spec
-  matches students by their account's email address. In Microsoft Entra the
-  `email` claim is set by the user's own organization's admin and may be
-  unverified. Someone controlling their own tenant can set it to
-  `victim@uni.edu`. Because the first account to match keeps that userid for
-  good (line 127), the impostor also locks the real student out. This is the
-  known "nOAuth" class of bug. Either match on sign-in name only, or accept
-  email only when the domain is verified (the `xms_edov` claim), or restrict
-  which tenants can sign in.
-* <strong>The organizer's own identity isn't defined.</strong> Students are
-  bound to their stable account on first sign-in, but the organizer is
-  identified only as "the organizer" (lines 38–40). If that means the
-  organizer's sign-in name, the same mutable-identifier problem applies.
-* **It's unclear which machine the 60-second limit applies to** (lines 307–310
-  and 407–408). The supported browsers include phones (line 423). If forming
-  runs in the browser, 500 × 100 has to finish on a two-year-old phone. If it
-  runs on the server, the spec needs to cover a job that survives a page reload,
-  and what the page shows after a reload during forming. The same choice decides
-  what **Cancel** does and whether "on any computer" refers to clients or
-  servers. Since the result may not depend on speed, the search has to stop on a
-  fixed criterion. So "within 60 seconds" needs a reference machine, or it's
-  untestable.
-* **The test oracle in the acceptance criteria can be infeasible** (lines
-  438–439). "Random lists of at most 8 students" puts no bound on projects. With
-  8 students, *k* = 1 and 100 projects, checking every valid assignment means
-  about 100!/92! ≈ 7.5 × 10¹⁵ project assignments. The criterion should bound
-  *P*, for example to 4 or fewer.
+* **The spec doesn't say how scores are compared** (lines 316–327 and
+  459–461). Scores are fractions such as 1/3 and 5/6. With floating-point
+  numbers, two assignments that should tie can differ by a tiny rounding
+  error. That can break three things:
+  * "no valid assignment has a higher score";
+  * "Not improvable" (a neutral swap looks like an improvement, and the search
+    can loop);
+  * the acceptance test's "equals the best score".
+
+  The spec should require exact arithmetic or a stated tolerance. Exact
+  arithmetic is easy here, because every value is *j*/*n* with *n* ≤ 500.
+* **"Repeatable" has no version boundary** (line 325). As written, a later
+  release with a better algorithm would break the rule. Limit it to "the same
+  version of the tool", or record the version with the results.
+* **Fixing mismatched sign-in names is slow.** At many universities the
+  sign-in name differs from the email address the organizer knows, for
+  example `s1234567@uni.edu` instead of `jane.doe@uni.edu`. Each such student
+  must contact the organizer, who renames entries one at a time. A list of
+  refused sign-ins on the session page, with a one-click Rename, would solve
+  this without the email-matching risk from round 2.
+* **There are no quotas.** Anyone with any work or school account can create
+  any number of sessions of up to 500 × 100 entries, and each one is kept for
+  365 days. The spec should cap sessions per organizer, or restrict sign-in to
+  particular organizations.
 
 ##### What's strong
 
-The scoring is normalized and fully stated, and the sizing rules are exact, with
-examples that check out. The Expected results table is correct and every row has
-exactly one best assignment. Rename versus remove-plus-add is clearly separated,
-the CSV format is precise, the statement that teammate preferences can't be
-fully hidden is honest, and the out-of-scope list is concrete. Fixing items 1–3
-and the email-claim issue would make it a solid 9.
+The scoring is fully stated and every example checks out exactly. The size
+rules are tight and the "fewer than 2*k*" claim holds. The rules for stale tabs
+and closed sessions are now close to complete. Forming on the server, with
+Cancel and reload behavior, is well defined. The privacy section is honest
+about what it can't hide. Fixing items 1 and 2 and stating exact arithmetic
+would make it a 10.
 
 ### Aruzhan Akhanayeva
 
