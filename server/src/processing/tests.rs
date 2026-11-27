@@ -2894,22 +2894,191 @@ fn test_duplicate_fragment_in_one_file() {
     assert!(content.contains("First.") && !content.contains("Second."));
 }
 
-// Verify that a fragment in a Markdown document is an error.
+// ### Fragments in Markdown documents
+//
+// Translate a Markdown document as `doc.md`, returning the content the cache
+// stored for its fragment `frag`.
+fn markdown_fragment_content(
+    // The Markdown document.
+    source: &str,
+    // The fragment's cached content.
+) -> String {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    source_to_codechat_for_web(source, Path::new("doc.md"), 0.0, false, Some(cache.clone()))
+        .unwrap();
+    cache.lock().unwrap().files[Path::new("doc.md")].fragments["frag"]
+        .content
+        .clone()
+}
+
+// Verify that, without a `following` attribute, a Markdown fragment placed in
+// a heading encloses that heading's whole section, subsections included, and
+// stops at the next heading of the same level. Its own tag and backlinks are
+// excluded.
 #[test]
-fn test_hydrate_fragment_in_markdown() {
+fn test_markdown_fragment_section() {
     assert_eq!(
-        source_to_codechat_for_web(
-            "<fragment id=\"f\"></fragment>",
-            Path::new("foo.md"),
-            0.0,
-            false,
-            None
+        markdown_fragment_content(indoc!(
+            "
+            # Title
+
+            Intro.
+
+            ## Section <fragment id=\"frag\"></fragment>
+
+            One.
+
+            ### Subsection
+
+            Two.
+
+            ## Next
+
+            Excluded.
+            "
+        )),
+        "<h2>Section </h2>\n<p>One.</p>\n<h3>Subsection</h3>\n<p>Two.</p>\n"
+    );
+}
+
+// Verify that a Markdown fragment placed partway through a section begins with
+// the block holding its tag, and that a higher-level heading also ends it.
+#[test]
+fn test_markdown_fragment_mid_section() {
+    assert_eq!(
+        markdown_fragment_content(indoc!(
+            "
+            ## Section
+
+            Skipped.
+
+            <fragment id=\"frag\"></fragment>Kept.
+
+            * A list.
+
+            # Higher
+
+            Excluded.
+            "
+        )),
+        "<p>Kept.</p>\n<ul>\n<li>A list.</li>\n</ul>\n"
+    );
+}
+
+// Verify that a Markdown fragment before the first heading ends at the first
+// heading of any level, and that one in a list begins with the entire list.
+#[test]
+fn test_markdown_fragment_before_first_heading() {
+    assert_eq!(
+        markdown_fragment_content(indoc!(
+            "
+            * First.
+            * Second <fragment id=\"frag\"></fragment>
+
+            After.
+
+            ###### Lowest
+
+            Excluded.
+            "
+        )),
+        "<ul>\n<li>First.</li>\n<li>Second </li>\n</ul>\n<p>After.</p>\n"
+    );
+}
+
+// Verify that `following` counts top-level blocks in a Markdown document,
+// regardless of headings, and that it clamps at the end of the document.
+#[test]
+fn test_markdown_fragment_following() {
+    for (following, expected) in [
+        ("0", "<p>Start.</p>\n"),
+        ("2", "<p>Start.</p>\n<h2>Heading</h2>\n<p>After.</p>\n"),
+        (
+            "99",
+            "<p>Start.</p>\n<h2>Heading</h2>\n<p>After.</p>\n<p>End.</p>\n",
         ),
-        Ok(build_codechat_for_web(
-            MARKDOWN_MODE,
-            "<p><fragment contenteditable=false id=f><span class=cc-error>fragments are not allowed in Markdown documents</span></fragment>",
-            vec![]
-        ))
+    ] {
+        assert_eq!(
+            markdown_fragment_content(&formatdoc!(
+                "
+                <fragment id=\"frag\" following=\"{following}\"></fragment>Start.
+
+                ## Heading
+
+                After.
+
+                End.
+                "
+            )),
+            expected,
+            "following=\"{following}\""
+        );
+    }
+}
+
+// Verify that an unparsable `following` attribute in a Markdown document
+// produces the same error as in a source file.
+#[test]
+fn test_markdown_fragment_following_invalid() {
+    assert_eq!(
+        markdown_fragment_content("<fragment id=\"frag\" following=\"x\"></fragment>Text."),
+        "<span class=\"cc-error\">the \"following\" attribute (\"x\") must be a whole number</span>"
+    );
+}
+
+// Verify that a Markdown fragment whose section holds a gather element is an
+// error, and that `following` can stop it before the gather element.
+#[test]
+fn test_markdown_fragment_contains_gather() {
+    let source = |following: &str| {
+        formatdoc!(
+            "
+            ## Section <fragment id=\"frag\"{following}></fragment>
+
+            Text.
+
+            <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>
+            "
+        )
+    };
+    assert_eq!(
+        markdown_fragment_content(&source("")),
+        "<span class=\"cc-error\">a fragment may not contain a gather element</span>"
+    );
+    assert_eq!(
+        markdown_fragment_content(&source(" following=\"1\"")),
+        "<h2>Section </h2>\n<p>Text.</p>\n"
+    );
+}
+
+// Verify that a Markdown fragment hydrates like a source file's: a gather
+// element in another file lists the fragment's section, and the fragment
+// renders a backlink to that gather element.
+#[test]
+fn test_markdown_fragment_gathered() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    let translate = |source: &str, path: &str| {
+        let translation =
+            source_to_codechat_for_web(source, Path::new(path), 0.0, false, Some(cache.clone()))
+                .unwrap();
+        let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+            panic!("No diff!");
+        };
+        code_mirror.doc
+    };
+    let gathering = "<h1 id=\"gath\" data-gather=\"frag\">Gathered</h1>";
+    let fragment = "## Section <fragment id=\"frag\"></fragment>\n\nText.\n";
+    translate(gathering, "a.md");
+    // Translate the fragment's file twice: the first pass commits the gather
+    // element's reference, the second hydrates the backlink it produces.
+    translate(fragment, "b.md");
+    assert_eq!(
+        translate(fragment, "b.md"),
+        "<h2>Section <fragment contenteditable=false id=frag>See <a href=a.md#gath>Gathered</a></fragment></h2><p>Text."
+    );
+    assert_eq!(
+        translate(gathering, "a.md"),
+        "<h1 class=cc-gather data-gather=frag id=gath>Gathered</h1><div class=cc-gather-items contenteditable=false><p class=cc-gather-item-link>From <a href=b.md#frag>b.md</a>:<h2>Section</h2><p>Text.</div>"
     );
 }
 
