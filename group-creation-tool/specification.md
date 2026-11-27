@@ -37,8 +37,9 @@ that its link no longer works.
 
 The organizer is the only person who can see or change a session's organizer
 pages. Anyone who signs in can create sessions and becomes the organizer of
-the sessions they create. An organizer may also be on the student list of
-their own session.
+the sessions they create. The tool recognizes an organizer by their account,
+not by their sign-in name, so a change to their sign-in name keeps their
+sessions. An organizer may also be on the student list of their own session.
 
 Organizer pages
 ---------------
@@ -119,13 +120,14 @@ because the session was deleted, the page says so without asking the student
 to sign in. Otherwise, the page asks the student to sign in, unless they are
 already signed in. Then:
 
-* A student is **on the list** when their sign-in name or their account's
-  email address matches a userid on the student list. They see the
-  preferences page.
+* A student is **on the list** when their sign-in name matches a userid on
+  the student list. They see the preferences page. Only the sign-in name is
+  used, since an account's email address can be set to someone else's; if a
+  student's sign-in name differs from the userid the organizer entered, the
+  organizer corrects it with **Rename**.
 * The first time a student opens the session, it links that userid to their
   account. From then on, the session recognizes them by their account even if
-  its sign-in name or email address changes, and no other account can use that
-  userid.
+  its sign-in name changes, and no other account can use that userid.
 * Anyone else sees a message naming their sign-in name and the organizer,
   saying they are not on this session's list and should contact the
   organizer, with a **Sign out** button so they can switch accounts.
@@ -171,18 +173,23 @@ the page is closed or reloaded.
 Each save replaces all of the student's saved preferences, so if the student
 has the page open in two tabs, the last save wins. An open page shows
 preferences saved from another tab within a minute, unless it has unsaved
-changes of its own.
+changes of its own. A save never applies to an entry that was added to the
+lists after the page last loaded them, even if it has the same name as an
+entry the page shows; preferences about such an entry are dropped, and the
+page then shows the current lists.
 
 A student has *saved preferences* once any change of theirs has been saved.
 
 While the session is Closed, the page shows the student's saved preferences
 read-only, with a notice that preferences are closed. A change that reaches
-the tool after the session closed is not saved, and the page says so.
+the tool after the session closed is refused and not retried, even if the
+session is reopened later: the page says the change was not saved and
+switches to read-only.
 
 ### Privacy between students
 
 A student sees only their own preferences. No page or file shows a student's
-teammate preferences, or any figure computed from them, to anyone but that
+teammate preferences, or any number computed from them, to anyone but that
 student. The organizer sees how each student's project preference was met
 (see Results).
 
@@ -195,7 +202,7 @@ Forming groups
 
 ### Group sizes
 
-The organizer sets the **group size**, *k*. With *S* students:
+The organizer sets the **minimum group size**, *k*. With *S* students:
 
 * *k* ranges from 1 to *S*. Until the organizer changes it, it is √*S*
   rounded to the nearest whole number, with halves rounded up, but at least 2
@@ -206,9 +213,12 @@ The organizer sets the **group size**, *k*. With *S* students:
   either ⌊*S*/*G*⌋ or ⌈*S*/*G*⌉ students, so the students left over after
   filling groups of *k* are spread over the groups. Every student is in
   exactly one group.
+* So every group has at least *k* students, unless there are fewer than *k*
+  students in all, and fewer than 2*k*. The help text says so.
 
-For example, 50 students give a group size of 7 and 7 groups: six of 7
-students and one of 8. 500 students give 22 groups of 22 or 23.
+For example, 50 students give a minimum group size of 7 and 7 groups: six of
+7 students and one of 8. 500 students give 22 groups of 22 or 23. With 13
+students and a minimum group size of 7, there is one group of 13.
 
 Projects are spread evenly over the groups. With *P* projects, each project
 gets ⌊*G*/*P*⌋ or ⌈*G*/*P*⌉ groups. So several groups can work on the same
@@ -242,10 +252,13 @@ project.
   Preferred category, divided by the largest sum any *m* members could give:
   the sum of the first *m* values of that category, or of all of them if it
   holds fewer than *m*.
-* The *not-preferred share* is worked out the same way from their Not
-  preferred category, and is 0 or negative.
-* An empty category's share is 0. The teammate part is the sum of the two
-  shares.
+* The *not-preferred share* is the sum of the values of the members in their
+  Not preferred category, divided by the size, without its minus sign, of the
+  most negative sum any *m* members could give: the sum of the first *m*
+  values of that category, or of all of them if it holds fewer than *m*. So
+  it is 0 or negative.
+* A share is 0 when its category is empty or when the student is alone in
+  their group (*m* = 0). The teammate part is the sum of the two shares.
 
 So the project part and the teammate part each range from −1 to 1, however
 many items a student ranks.
@@ -274,7 +287,7 @@ These teammate parts show the scaling, for a student `a`:
 
 | Option | Control | Range | Default |
 | --- | --- | --- | --- |
-| Group size (*k*) | number | 1 to the number of students | see Group sizes |
+| Minimum group size (*k*) | number | 1 to the number of students | see Group sizes |
 | Project preference weight (*W*<sub>p</sub>) | number | 0–5 | 1 |
 | Teammate preference weight (*W*<sub>t</sub>) | number | 0–5 | 1 |
 
@@ -295,6 +308,10 @@ Open, the button offers to close the session first. While groups are being
 formed, the page says so, shows the time elapsed, and offers **Cancel**, which
 keeps any earlier results. Forming again replaces the earlier results, after
 the organizer confirms.
+
+Groups are formed by the tool's server, not on the organizer's device.
+Forming carries on if the organizer closes or reloads the page, and the
+session page shows it as under way when opened again, with **Cancel**.
 
 The result must be:
 
@@ -346,8 +363,8 @@ The file is meant to be read by programs, such as the next project. Values are
 written exactly as entered, even ones that a spreadsheet would treat as
 formulas.
 
-For example, three groups, the first two working on a project called
-`Parser, part 2`:
+For example, six students in three groups of 2, the first two groups working on
+a project called `Parser, part 2`:
 
 ```
 student_id,group,project
@@ -355,6 +372,8 @@ a@uni.edu,1,"Parser, part 2"
 b@uni.edu,2,"Parser, part 2"
 c@uni.edu,1,"Parser, part 2"
 d@uni.edu,3,Linter
+e@uni.edu,2,"Parser, part 2"
+f@uni.edu,3,Linter
 ```
 
 Expected results
@@ -367,10 +386,10 @@ score is not shown in the tool; it is given here for tests.
 Each row has students `a`–`d` and projects `X` and `Y`, in that order, unless
 the Preferences column says otherwise, and every option is at its default
 unless the Settings column says otherwise. With 4 to 6 students the default
-group size is 2. Preferences are written as `PP` (preferred projects), `NP`
-(not-preferred projects), `PT` (preferred teammates) and `NT` (not-preferred
-teammates), each listed strongest feeling first; anything not listed is
-Unspecified.
+minimum group size is 2. Preferences are written as `PP` (preferred
+projects), `NP` (not-preferred projects), `PT` (preferred teammates) and `NT`
+(not-preferred teammates), each listed strongest feeling first; anything not
+listed is Unspecified.
 
 | Preferences | Settings | Groups | Score |
 | --- | --- | --- | --- |
@@ -386,17 +405,17 @@ Unspecified.
 | projects `X`, `Y`, `Z`; a PP Z; b PP Z; c PP Y; d PP Y | | Y: c, d; Z: a, b | 4 |
 | project `X` only; a PT b; c PT d | | X: a, b; X: c, d | 2 |
 | students `a`–`f`; a PP X PT b; b PP X; c PP X PT d; d PP X; e PP Y; f PP Y | | X: a, b; X: c, d; Y: e, f | 8 |
-| students `a`–`f`; a PT b, c; b PP X; d PT e | group size 3 | X: a, b, c; Y: d, e, f | 3 |
+| students `a`–`f`; a PT b, c; b PP X; d PT e | minimum group size 3 | X: a, b, c; Y: d, e, f | 3 |
 
 The fifth and sixth rows differ only in the two not-preferred teammates, which
-split `a` and `b`. With 7 students and no preferences, the default group size
-is 3, giving 2 groups, of 4 and 3 students.
+split `a` and `b`. With 7 students and no preferences, the default minimum
+group size is 3, giving 2 groups, of 4 and 3 students.
 
 Limits and failures
 -------------------
 
-* **Sign-in.** Signing in asks only for permission to read the user's name,
-  sign-in name, and email address. If sign-in fails or is cancelled, the page
+* **Sign-in.** Signing in asks only for permission to read the user's name
+  and sign-in name. If sign-in fails or is cancelled, the page
   says so and offers to try again. If the user's organization requires an
   administrator to approve the tool first, the page says so and suggests
   asking the organization's IT administrator.
@@ -405,7 +424,9 @@ Limits and failures
   organizer pages keep what the organizer has entered while the page stays
   open.
 * **Forming time.** Forming groups for 500 students and 100 projects finishes
-  within 60 seconds.
+  within 60 seconds on a server with 2 processor cores. Since the result may
+  not depend on how fast forming runs (see Forming), this is a limit on the
+  work forming does, not a deadline at which it stops.
 * **Concurrent changes.** If the organizer edits the lists while a student's
   page is open, the student's page shows the new lists within a minute.
   Preferences about removed items are dropped as described under Session
@@ -435,8 +456,9 @@ Acceptance criteria
 * Every row of Expected results gives the stated groups and score, and every
   row of the teammate-part table under What "best" means gives the stated
   value.
-* With random lists of at most 8 students and preferences, the result's score
-  equals the best score found by checking every valid assignment.
+* With random lists of at most 8 students and at most 4 projects, and random
+  preferences, the result's score equals the best score found by checking
+  every valid assignment.
 * End to end: an organizer creates a session with four students and two
   projects; three of the students sign in through the link and save
   preferences, and the fourth never signs in; the organizer closes the
