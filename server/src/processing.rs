@@ -1094,7 +1094,7 @@ pub fn source_to_codechat_for_web(
                 .count();
             let dom = doc_blocks_to_dom(&html, doc_block_count)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
-            let (dom, walk_context) = hydrate_dom(dom, file_path, &cache, false)
+            let (dom, walk_context) = hydrate_dom(dom, file_path, &cache)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             // 4. Serialize and split on the separator, giving each doc block's
             //    hydrated HTML -- the form in which fragment contents are
@@ -1700,7 +1700,7 @@ fn contains_sentinel(
 /// document itself rather than code/doc blocks.
 fn hydrate_html(html: &str, file: &Path, cache: &Arc<Mutex<Cache>>) -> io::Result<String> {
     let dom = nodes_to_dom(parse_doc_block(html)?)?;
-    let (dom, walk_context) = hydrate_dom(dom, file, cache, true)?;
+    let (dom, walk_context) = hydrate_dom(dom, file, cache)?;
     let top_level = get_dom_root(&dom).children.borrow().clone();
     store_fragment_contents(&walk_context, FragmentSource::Markdown(&top_level), cache);
     hydrate_gathers(&walk_context, cache)?;
@@ -1720,9 +1720,6 @@ fn hydrate_dom(
     file: &Path,
     // The cache for the project containing this file.
     cache: &Arc<Mutex<Cache>>,
-    // True when this is a Markdown document, whose fragments enclose elements
-    // rather than code/doc blocks.
-    is_markdown: bool,
     // The parsed, patched DOM plus the walk results needed by later phases.
 ) -> io::Result<(Rc<Node>, WalkContext)> {
     // Everything below treats a `<fragment>` as empty, so this comes first.
@@ -1758,7 +1755,6 @@ fn hydrate_dom(
     let mut walk_context = WalkContext {
         facts: FileFacts::default(),
         path,
-        is_markdown,
         auto_ids,
         doc_block_index: 0,
         xrefs: Vec::new(),
@@ -2290,6 +2286,7 @@ fn code_doc_block_lines(
 /// elements it encloses, cleaned per the cache spec. Unlike a source file's
 /// fragment, this has no line numbers or indents to reproduce -- a Markdown
 /// document's layout is its rendered HTML.
+/// <fragment id="cc-ESj0YpSZci"></fragment>
 fn render_markdown_fragment_content(
     // The fragment to render.
     fragment: &FragmentHydration,
@@ -2299,7 +2296,7 @@ fn render_markdown_fragment_content(
     top_level: &[Rc<Node>],
     // The fragment's content, rendered as HTML.
 ) -> String {
-    let Some(range) = markdown_fragment_range(top_level, &fragment.node) else {
+    let Some(range) = markdown_fragment_range(top_level, &fragment.node, fragment.following) else {
         return String::new();
     };
     let enclosed = &top_level[range];
@@ -2325,24 +2322,42 @@ fn render_markdown_fragment_content(
 }
 
 /// Locate the top-level elements of a Markdown document which a fragment
-/// encloses. A Markdown document has no code/doc blocks to count, so its
-/// sections play their role: a fragment begins with the top-level element
-/// containing its tag and ends just before the next heading which closes the
+/// encloses; the cache spec's "Fragments in Markdown documents" gives the
+/// rationale. A fragment begins with the top-level element containing its tag.
+/// With a `following` attribute, it encloses that many further top-level
+/// elements, just as it encloses that many further code/doc blocks in a source
+/// file. Without one, it ends just before the next heading which closes the
 /// section the fragment begins in -- a heading of the same or a higher level.
 /// Subheadings therefore belong to the fragment. A fragment placed in a heading
 /// encloses that heading's whole section; one placed before the document's
 /// first heading ends at the first heading of any level.
+/// <fragment id="cc-4vz03vBRfB"></fragment>
 fn markdown_fragment_range(
     // The children of the Markdown document's root element.
     top_level: &[Rc<Node>],
     // The `<fragment>` element.
     fragment: &Rc<Node>,
+    // The fragment's `following` attribute, if present.
+    following: Option<usize>,
     // The indices into `top_level` of the enclosed elements, or `None` if the
     // fragment isn't in `top_level`.
 ) -> Option<Range<usize>> {
     let start = top_level
         .iter()
         .position(|node| contains_node(node, fragment))?;
+    // Only elements count as blocks: the whitespace between them and any
+    // comments ride along with the elements around them. Counting past the end
+    // of the document clamps, as it does in a source file.
+    if let Some(following) = following {
+        let end = top_level
+            .iter()
+            .enumerate()
+            .skip(start + 1)
+            .filter(|(_, node)| get_node_tag_name(node).is_some())
+            .nth(following)
+            .map_or(top_level.len(), |(index, _)| index);
+        return Some(start..end);
+    }
     // A heading of this level or lower closes the fragment's section. Before
     // the first heading, every heading does.
     let section_level = top_level[..=start]
@@ -2737,9 +2752,6 @@ struct WalkContext {
     facts: FileFacts,
     /// The canonicalized path of the file being hydrated.
     path: PathBuf,
-    /// True when hydrating a Markdown document, whose fragments enclose
-    /// elements rather than code/doc blocks.
-    is_markdown: bool,
     /// The ids `assign_auto_ids` generated for this file's `id="*"` elements.
     /// These are excluded from `facts`: they belong to the cache only after the
     /// file carrying them is written and re-read.
@@ -2778,10 +2790,14 @@ struct FragmentHydration {
     /// number of blocks in the document; see
     /// `FragmentFact::code_doc_block_end_index`.
     end: usize,
+    /// The value of the `following` attribute, or `None` if it's absent. A
+    /// Markdown fragment needs this rather than `end`, since an absent
+    /// attribute there selects a section, not a block count.
+    following: Option<usize>,
     /// When set, the fragment is in an error state detected during the walk (a
-    /// missing or invalid id, or a `following` attribute which is unparsable
-    /// or in a Markdown document): the message replaces both the
-    /// hydrated tag content and the cached fragment content.
+    /// missing or invalid id, or an unparsable `following` attribute): the
+    /// message replaces both the hydrated tag content and the cached fragment
+    /// content.
     error: Option<String>,
     /// False when the fragment wasn't recorded in `FileFacts` (its id is
     /// missing, invalid, or auto-assigned during this pass), so no content may
@@ -2820,25 +2836,18 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                 // aren't finalized during the walk -- so the caller stores it
                 // later via `Cache::update_fragment_content`.
                 if let Some(id) = id.filter(|id| !id.is_empty()) {
-                    // In a source file, the `following` attribute selects how
-                    // many code/doc blocks after the current doc block the
-                    // fragment encloses; the default is 1. A Markdown document
-                    // has no code/doc blocks, so there the attribute is an
-                    // error; its fragments end at a heading instead.
-                    let following_attr = get_attr_value(child, "following");
-                    let (following, following_error) = match &following_attr {
-                        None => (1, None),
-                        Some(_) if walk_context.is_markdown => (
-                            0,
-                            Some(
-                                "the \"following\" attribute is not allowed in Markdown documents"
-                                    .to_string(),
-                            ),
-                        ),
+                    // The `following` attribute selects how many blocks after
+                    // the current one the fragment encloses: code/doc blocks in
+                    // a source file, where the default is 1, or top-level
+                    // elements in a Markdown document, where omitting it
+                    // encloses the rest of the current section instead; see
+                    // `markdown_fragment_range`.
+                    let (following, following_error) = match get_attr_value(child, "following") {
+                        None => (None, None),
                         Some(following) => match following.trim().parse::<usize>() {
-                            Ok(count) => (count, None),
+                            Ok(count) => (Some(count), None),
                             Err(_) => (
-                                0,
+                                Some(0),
                                 Some(format!(
                                     "the \"following\" attribute (\"{following}\") must be a whole number"
                                 )),
@@ -2860,7 +2869,9 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                         )
                     };
                     let cached = cached && !walk_context.auto_ids.contains(&id);
-                    let end = walk_context.doc_block_index.saturating_add(following);
+                    let end = walk_context
+                        .doc_block_index
+                        .saturating_add(following.unwrap_or(1));
                     if cached {
                         walk_context.facts.fragments.push(FragmentFact {
                             id: id.clone(),
@@ -2874,6 +2885,7 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                         id,
                         start: walk_context.doc_block_index,
                         end,
+                        following,
                         error,
                         cached,
                     });
@@ -2886,6 +2898,7 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                         id: String::new(),
                         start: walk_context.doc_block_index,
                         end: walk_context.doc_block_index,
+                        following: None,
                         error: Some("a fragment requires an \"id\" attribute".to_string()),
                         cached: false,
                     });
