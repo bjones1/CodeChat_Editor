@@ -36,6 +36,7 @@ is not directly related to the project, and only used for pull request tracking.
 | 2 | Rated 8/10; 20 findings in total. **High:** not-preferred share has the wrong sign as written, CSV example needs 3 groups from 4 students (impossible), group size 1 divides by zero, matching on the email claim lets one person pass as another and lock out the real student. **Medium:** closed-session save rejection loops on retry, a stale tab can restore preferences for a removed and re-added entry, privacy wording contradicts itself, "group size" isn't the actual size, organizer identity is undefined, the 60-second limit names no machine, the ≤8-student test oracle is unbounded in projects. **Low:** 9 vague terms ("last change", "changes it", rounding of halves, "letter" in file names, userid syntax, separators, title trimming, Rename collisions, propagation of Close/Reopen/Delete). Expected results table and default group sizes verified correct by brute force. | Fixed the 11 High and Medium findings and CodeRabbit's 2 comments on the pull request, which repeat items 1 and 3; left the 9 Low vague terms as they are. The not-preferred share divides by the size of the most negative sum, and both shares are 0 for a student alone in a group. The CSV example now has 6 students in 3 groups. Students are matched on sign-in name only, not email, and organizers are recognized by their account. A save refused because the session closed is final, and a save from a stale page never applies to a re-added entry. The privacy rule says "number" instead of "figure". The option is renamed "Minimum group size", with sizes from *k* to under 2*k*. Forming runs on the server, survives a page reload, and its 60-second limit names a 2-core server. The small-class acceptance test is limited to 4 projects. Expected results rechecked by brute force. |
 | 3 | Rated 9/10; 15 new findings in total, plus the 9 Low vague terms carried over from round 2. **Medium:** "after the session closed" can be read as refusing every change even after a reopen, saves refused because the session was deleted or the student was removed still retry forever, an extra Unspecified teammate lowers the teammate part, the spec doesn't require exact score comparison (floating-point ties break "best", "not improvable" and the acceptance test), "Repeatable" has no version boundary. **Low:** a "fewer than *k* students" clause that can never apply, dragging vs. "goes to its end", 6 vague terms (moves while filtered, how list edits are applied, editing the title, "out of date", the 2-core server, page speed including sign-in), slow correction of mismatched sign-in names, no quotas on sessions. Expected results table, teammate-part table and default group sizes verified correct by brute force. | |
 | 5 | Rated 7/10 (9/10 without the pasted architecture); 11 new findings in total, plus every round-3 finding, all still open since the behavior text hasn't changed. **High:** the architecture document was pasted into the spec (lines 414–751), against the spec's own scope, splitting its behavior sections, with self-references that no longer make sense and a second copy that will drift. **Medium:** single-tenant sign-in vs. "anyone who signs in" and "the user's organization", display names in the Teammates list show who has signed in, a fixed amount of search work vs. "not improvable", forming races with list edits, Reopen and option changes, one permission error for a closed session, a deleted session and a removed student, Rename can't fix a link to the wrong person, the privacy wording still forbids the result counts. **Low:** "on the list" doesn't cover linked accounts whose sign-in name changed, the acceptance criteria skip the hardest guarantees, "but at least 1" can never apply. Expected results table, teammate-part table and default group sizes verified correct by brute force with exact fractions. | Fixed the High and Medium findings, including the round-3 Medium findings still open, and left the Low ones (items 8–10, the dead "fewer than *k*" clause, dragging, and the vague terms) as they are. Removed the pasted architecture from the spec; [architecture.md](architecture.md) is now the only copy, and the spec's opening points to it instead of the clause about code organization. The spec now says the tool serves one organization and only its accounts sign in, matching the single-tenant design. Students still see classmates' display names: the spec now says this shows who has signed in, and that this is accepted, since the tool is used within a faculty whose students largely know each other and names are easier to find than userids. Forming improves until no simple change helps and never stops because time runs out; Repeatable holds for one version of the tool; scores are compared exactly as fractions. While forming runs, the organizer cannot edit or rename entries, reopen the session or change options, and the architecture refuses these in the same transaction that starts a job. A closed session, a deleted session and a removed student each get their own message, and none is retried; after a reopen the page is editable again. The spec says removing and re-adding an entry, not Rename, gives it to a different person. The privacy rule now allows the groups and what follows from them. The finding that an extra Unspecified teammate lowers the teammate part is struck through: this is intended, and the spec now explains why. The architecture was updated to match each change. |
+| 6 | Rated 9/10; 7 new findings in total, plus the Low findings left open in round 5. **High:** the architecture's search, which improves until no simple change helps, can stop short of the best assignment for 8 students or fewer (a 4-student, 3-project counterexample stops at a score of 7 where the best is 22/3). **Medium:** a single-tenant Entra app still lets B2B guest accounts sign in, against "accounts of other organizations cannot sign in"; a save refused for any reason other than the three checked ones is saved again forever, and a close-then-reopen race saves a change the spec says is dropped; the 60-second limit names no input preferences and the search has no bound on its steps. **Low:** "the same lists" under Repeatable vs. a new entry id after a remove and re-add, the 10-second retry and **Retry** don't match how the Firestore SDK resends writes, the filter doesn't say whether it ignores case or what "name" means for teammates. Expected results table, teammate-part table and default group sizes verified correct by brute force with exact fractions. | |
 
 #### Last specification review
 
@@ -44,124 +45,127 @@ desktop app.
 
 Prompt:
 
-> My teammate has added new changes to the repo and specification. Review a
-> specification at @group-creation-tool/specification.md .
+> Review a specification at @group-creation-tool/specification.md .
 
-Output (line numbers refer to [specification.md](specification.md) as it was
-reviewed, before this round's changes; strikethrough marks findings judged
-incorrect):
+Output (line numbers refer to [specification.md](specification.md) and
+[architecture.md](architecture.md) as they were reviewed, before this round's
+changes):
 
-I'd rate it **7/10**, down from 9 in round 3. None of the behavior text has
-changed since round 3. The only change is commit `bb9fab1`, which pastes the
-whole architecture document into the spec, at lines 414–751. That block is
-identical to lines 9–345 of `architecture.md`. Without the paste the spec
-would still be a 9.
+I'd rate the spec **9/10**, up from 7 in round 5. The pasted architecture is
+gone, and every High and Medium finding from round 5 has been fixed in the
+text. The most serious problem left is in `architecture.md`: its search can't
+keep the spec's "best for small classes" promise. I didn't modify any files.
 
-I checked the 13 Expected results rows by testing every valid assignment with
-exact fractions. Each gives exactly the stated groups and score, and each has
-exactly one best assignment. All 5 teammate-part rows are correct, and the
-default group sizes for 1–7, 13, 50 and 500 students match the text. I didn't
-modify the file.
-
-##### The pasted architecture
-
-* **It contradicts the spec's own scope.** Lines 4–5 say the spec "does not
-  prescribe how the code is organized". It now names Firestore collections,
-  Cloud Functions and security rules.
-* **It breaks the reading order.** It sits between Expected results and Limits
-  and failures, so the behavior sections are split by 340 lines of
-  implementation detail.
-* **Its references no longer make sense.**
-  * "As the specification requires" (lines 468, 517, 541) now points the spec
-    at itself.
-  * "Nothing below depends on it" (line 433) now covers Limits, Constraints
-    and Acceptance.
-  * The paste left out the opening paragraph of `architecture.md`, which says
-    the spec wins when the two disagree.
-* **There are now two copies** (this one and `architecture.md`) that will
-  drift apart. There are also stray blank lines at 751–752 and 773–775.
-
-Fix: remove lines 414–752, commit `architecture.md` as its own file, and link
-to it from the spec. The paste does have one benefit: it shows where the spec
-and the design disagree. Those disagreements need fixing wherever the
-architecture ends up.
+I tested all 13 Expected results rows against every valid assignment, using
+exact fractions. Each one gives exactly the stated groups and score, and each
+has exactly one best assignment. All 5 teammate-part rows are correct. The
+group sizes in the text are right for 50, 500, 13 (with *k* = 7), 7, and 1–6
+students.
 
 ##### Spec and architecture disagree
 
-1. **Which organizations can sign in.** Line 461 makes the app single-tenant,
-   for university accounts only. The spec says "Anyone who signs in can create
-   sessions" (line 39), and lines 758–760 handle "the user's organization",
-   which implies many organizations. Decide this in the spec. Single-tenant
-   would also solve the missing-quotas finding from round 3.
-2. **Students can see who has signed in.** The spec has the Teammates list
-   show a classmate's display name "when known" (lines 143–145). The roster
-   holds `displayName = null` until that student signs in (line 630). So any
-   student can tell which classmates have signed in, which is exactly what
-   lines 622–624 say the roster is designed to hide. The spec should either
-   accept this or show only userids to students.
-3. **A fixed amount of work vs. "not improvable".** Lines 555–556 give the
-   search a fixed amount of work so that results repeat. Lines 321–324 require
-   that no simple change improves the result. If the work runs out before no
-   simple change helps, the second guarantee fails. If the search keeps going
-   until then, the amount of work isn't fixed. The spec should say that
-   repeatable means a fixed process followed by improvement until no simple
-   change helps.
-4. **Forming can race with edits.** The job records its `listVersion` (line
-   685), but no rule throws its results away if the lists are edited, the
-   session is reopened, or the options change while it runs. `updateLists` and
-   `setState` discard the results first (lines 532 and 534), and then the job
-   writes stale groups that look current. The spec has left editing during
-   forming open since round 2; the design now shows it's a real bug.
-5. **One error for three different refusals.** Lines 516–517 treat every
-   refused save as a permission error. A closed session, a deleted session and
-   a removed student all look the same, so a removed student is told that
-   preferences are closed. This is round 3's item 2 again: the spec should
-   give each case its own behavior.
+1. **The search can stop short of the best answer for small classes** (spec
+   lines 354–355; architecture lines 170–174). The design starts from one
+   assignment and makes simple changes until none helps. That reaches a point
+   no simple change can improve, but not always the best assignment. Here is a
+   counterexample I verified:
+   * 4 students and projects `X`, `Y`, `Z`.
+   * a PP Z, Y, PT b; b PP Z, Y, PT a.
+   * c PP Z, X, Y, PT d; d PP Z, X, Y, PT c.
+   * **Y: a, b; Z: c, d** scores 7, and every simple change from it lowers the
+     score. The best of them is 20/3.
+   * The best assignment is **Z: a, b; X: c, d**, at 22/3. Reaching it means
+     changing both groups' projects at once.
+
+   For 8 students or fewer, the architecture needs an exact method. There are
+   at most 105 ways to split the students into groups. For each split,
+   choosing the projects is small:
+   * When *P* ≤ *G*, every allowed spread of projects can be tried.
+   * When *P* > *G*, each project gets at most one group, so it's an
+     assignment problem (for example, the Hungarian algorithm). This covers up
+     to 100 projects.
+
+   Local search alone should be used only above 8 students.
+2. **Guest accounts can sign in** (spec lines 19–21 and 457–458; architecture
+   lines 56–60 and 74–75). A single-tenant Entra app accepts B2B guests.
+   Guests are common in Teams, and their tokens carry the university's tenant
+   id, so the `tid` check lets them through. The spec says accounts of other
+   organizations can't sign in. Decide in the spec whether guests are allowed.
+   If not, have `signIn` reject them, for example through the `acct` optional
+   claim, or an `idp` claim that differs from the issuer.
+3. **A refused save can loop** (spec line 177; architecture lines 112–120).
+   Step 4 assumes any other refusal means an old `listVersion`, and saves
+   again. A refusal for any other reason repeats forever, against "a save the
+   tool refuses is never retried". Examples: a duplicate id, or an id the
+   rules reject because of a bug.
+   * There's also a race. If the session closes and reopens between the save
+     and the check, step 4 saves the change, which the spec says must be
+     dropped (lines 197–199).
+   * Fix: save again only if the roster's `listVersion` differs from the one
+     that was sent. Otherwise show *Not saved*.
 
 ##### New spec findings
 
-6. **Rename can't fix a link to the wrong person** (lines 105–108 and
-   128–130). Suppose the organizer typed a userid that belongs to another real
-   person, and that person signs in first. Rename keeps them linked, and the
-   intended student is locked out. Only removing and re-adding the entry
-   breaks the link, and the spec never says so. Say that, or add an **Unlink**
-   action.
-7. **The privacy wording still contradicts itself** (lines 191–193). The
-   result counts (lines 341–342) and *preferred #i* depend on the assignment,
-   which depends on teammate preferences. So these are a "number computed from
-   them". Lines 699–701 already read the rule as "except the groups
-   themselves". Put that wording in the spec, covering everything that follows
-   from the groups.
-8. **The definition of "on the list" is incomplete** (lines 123–124). It
-   doesn't cover a linked account whose sign-in name has changed. Nor does it
-   say which entry wins if an account linked to `x` is renamed to match an
-   unlinked `y`.
-9. **The acceptance criteria skip the hardest guarantees** (lines 794–808).
-   Nothing tests that a large class can't be improved by a simple change, that
-   results repeat, the 60-second limit, privacy, the CSV format or file name,
-   or refusal after a close.
-10. **"But at least 1"** (line 212) can never apply, since *k* ≤ *S*. It's the
-    same kind of dead clause as round 3's item 4.
+4. **The 60-second limit has no test input** (lines 465–468). "500 students
+   and 100 projects" doesn't say what preferences to use. Improving until no
+   simple change helps has no bound on how many steps it takes, so the limit
+   can't be checked as written.
+   * Name a benchmark, for example random preferences in which every student
+     ranks a set number of projects and teammates.
+   * Say what happens when forming runs long: it still finishes, it only
+     misses the target.
+5. **"Repeatable" depends on what "same lists" means** (lines 361–365).
+   Remove a student who never saved anything and add them back. The lists and
+   preferences read the same, but the entry has a new random id. If the
+   architecture's seed (line 171) includes entry ids, the groups change.
+   * Either say the seed comes from the list text and order, or define "same
+     lists" as the same entries.
+6. **The 10-second retry doesn't fit the Firestore SDK** (lines 175–177). The
+   SDK queues writes and sends them on its own schedule when it reconnects. A
+   write it can't send never fails, so the page has no event for *Not saved*.
+   * The architecture should say how the page detects that the tool can't be
+     reached and how **Retry** forces a resend. Or the spec should describe
+     only what users see, such as "saved as soon as the connection returns".
+7. **The filter isn't fully defined** (lines 164–165). It doesn't say whether
+   matching ignores case, or whether "name" means the display name for
+   teammates.
 
-##### Still open from round 3
+##### Still open (Low, left as is in round 5)
 
-Every round-3 finding still stands, because the behavior text hasn't changed:
+* "On the list" doesn't say which entry wins when a linked account's new
+  sign-in name matches another, unlinked entry.
+* The acceptance criteria don't test:
+  * that a simple change can't improve the result;
+  * that results repeat;
+  * the 60-second limit;
+  * privacy;
+  * the CSV format;
+  * that saves are refused after a close.
+* Three clauses can never apply:
+  * "but at least 1" (line 235);
+  * "unless there are fewer than *k* students in all" (lines 239–240);
+  * "halves rounded up" (line 231), since √*S* is never a half. It does no
+    harm.
+* Dragging can contradict "goes to its end", and some vague terms remain:
+  * "last change";
+  * whether typing the default *k* counts as changing it;
+  * "letter" in file names;
+  * title trimming and editing;
+  * separators;
+  * Rename collisions;
+  * whether the 1–500 and 1–100 limits apply to edits on the session page;
+  * how fast Close, Reopen and Delete reach open pages.
 
-* "after the session closed" can be read as "ever after";
-* refused saves retry forever;
-* ~~an extra Unspecified teammate lowers the teammate part;~~
-* the "fewer than *k*" clause can never apply;
-* dragging vs. "goes to its end";
-* how scores are compared (exact arithmetic);
-* "Repeatable" has no version boundary;
-* the 6 vague terms and the 9 carried over from round 2.
+##### What's strong
 
-Some of these are already decided in the architecture and could move up into
-the spec:
-
-* "last change" (lines 563–564);
-* case-only edits keep the latest casing (line 645);
-* a stale save is refused and saved again (lines 518–519).
+* Each of the three save refusals now has its own message, and the text says
+  plainly that a change refused because the session closed is dropped.
+* The privacy section is now consistent with itself. It states openly what it
+  can't hide: the groups themselves, and who has signed in.
+* Forming during edits is closed off in both documents, with the check in the
+  same transaction as the edit.
+* Exact fraction scoring and the version limit on Repeatable remove the tie and
+  drift problems from round 3.
 
 ### Aruzhan Akhanayeva
 
@@ -364,18 +368,38 @@ versus remove-and-add is cleanly separated. The CSV format is precise down to
 line endings and quoting. The privacy section honestly admits what can't be
 hidden, and the out-of-scope list is concrete.
 
-### (Team member 3 name)
+### Ademi Bakhytova
 
-(Same sections as Team member 1)
+Github user id:
 
-### (Team member 4 name)
+Git user id:
 
-(Same sections as Team member 1)
+#### Contributions
+
+
+
+#### Build and run test
+
+Build and run tests are not included, as current project stage only required the
+specification (as of Nov. 28, 2026). Also, current repository (CodeChat Editor)
+is not directly related to the project, and only used for pull request tracking.
+
+#### Specification review rounds
+
+| Round | Findings | Main Changes Made |
+| --- | --- | --- |
+
+
+#### Last specification review
+
+### Alisher Akim
+
+Couldn't contact them, unfortunately.
 
 Final submission
 ----------------
 
-### (Team member 1 name)
+Danii Kaimekin
 
 GitHub userid: (team member 1's GitHub userid)
 
@@ -403,11 +427,11 @@ GitHub userid: (team member 1's GitHub userid)
 
 (LLM output, possibly with strikethrough)
 
-### (Team member 2 name)
+### Aruzhan Akhanayeva
 
 (Same sections as Team member 1)
 
-### (Team member 3 name)
+### Ademi Bakhytova
 
 (Same sections as Team member 1)
 
