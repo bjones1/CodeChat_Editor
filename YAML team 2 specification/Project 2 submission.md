@@ -6,6 +6,13 @@ Team members are Altynay Kishkenebayeva, Aiym Saparkhan,
 <span id="author-1794145678874">Ali Zhumatayev</span>. The specification
 consists of the file [yaml-spec.md](yaml-spec.md).
 
+Responsibilities:
+-----------------
+
+* Altynay - responsible for draft and overall project management.
+* Ali and Aiym - responsible for finalizing specification.
+* Daulet - responsible for finalizing implementation part.
+
 Draft submission
 ----------------
 
@@ -147,26 +154,16 @@ differences between implementations.
     character references and non-ASCII legacy text, all forbidden end-tag forms,
     noncanonical line endings, a second match outside the first subtree,
     matching supplied element roots, CR/CRLF legacy payloads, and duplicate or
-    case-variant Base64 attributes.
+    case-variant Base64 attributes.<br>
 
 <!-- ================================ -->
-
-### Ali
-
-<!-- ================================ -->
-
-### Daulet
-
-<!-- ================================ -->
-
-### Aiym
 
 ---
 
 Final submission
 ----------------
 
-### Altynay
+### Ali
 
 #### Contributions
 
@@ -176,7 +173,19 @@ Lorem ipsum
 
 Lorem ipsum
 
-#### Implementation review rounds
+#### Last LLM spec review
+
+Lorem ipsum
+
+<br><!-- ================================ -->
+
+### Aiym
+
+#### Contributions
+
+Lorem ipsum
+
+#### Spec review rounds
 
 Lorem ipsum
 
@@ -184,16 +193,34 @@ Lorem ipsum
 
 Lorem ipsum
 
+<p><br></p>
+
+### Daulet
+
+#### Contributions
+
+Lorem ipsum
+
+#### Implementation review rounds
+
+Lorem ipsum
+
 #### Last LLM implementation review
 
 Lorem ipsum<!-- ================================ -->
 
-### Ali
+<p><br></p>
 
-<!-- ================================ -->
+### Altynay
 
-### Daulet
+#### Last LLM spec review
 
-<!-- ================================ -->
+Lorem ipsum
 
-### Aiym
+#### Last LLM implementation review
+
+Lorem ipsum
+
+<p><br></p>
+
+<p><br></p>
