@@ -2851,13 +2851,13 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                     // during this pass, which is otherwise hydrated normally
                     // (nothing can reference an id no file contains yet, so its
                     // backlinks are empty).
-                    let (error, cached) = if !is_css_identifier(&id) {
+                    let (error, cached) = if is_css_identifier(&id) {
+                        (following_error, true)
+                    } else {
                         (
                             Some(format!("\"{id}\" is not a valid CSS identifier")),
                             false,
                         )
-                    } else {
-                        (following_error, true)
                     };
                     let cached = cached && !walk_context.auto_ids.contains(&id);
                     let end = walk_context.doc_block_index.saturating_add(following);
