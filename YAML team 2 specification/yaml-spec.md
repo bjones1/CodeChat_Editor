@@ -1,64 +1,88 @@
-# YAML Front Matter Preservation
-================================
+YAML Front Matter Preservation
+==============================
 
-## Status
+\================================
 
-Draft specification. The recognition and preservation rules below are
-normative for implementations of this feature.
+Status
+------
 
-## Purpose
+Draft specification. The rules below are normative for implementations.
 
-Preserve a YAML metadata block at the beginning of a Markdown document when the
-CodeChat Editor converts Markdown to HTML and later converts that HTML back to
-Markdown.
+Purpose
+-------
 
-The YAML is opaque text. The editor must not parse, validate, reorder, or
-reformat it.
+Preserve YAML metadata at the beginning of a Markdown document across Markdown
+to HTML and HTML to Markdown conversion.
 
-## Scope
+YAML is opaque text: the editor must not parse, validate, reorder, or reformat
+it. Opaqueness does not exempt it from this specification's character, UTF-8,
+and HTML representation rules.
 
-This specification covers only a YAML block at the beginning of a Markdown
-document, delimited by lines containing `---`. In HTML, the block is represented
-by a `<script type="application/yaml">` element.
+Scope
+-----
 
-This specification does not define YAML syntax, YAML validation, or metadata
-editing features.
+This specification covers only a YAML block at the start of Markdown, delimited
+by lines containing `---`. HTML represents it with `<script
+type="application/yaml">`.
 
-## Terms
+It does not define YAML syntax, YAML validation, or metadata editing features.
+
+Terms
+-----
 
 * **Front matter**: the opening `---` line, YAML payload, and closing `---` line
   at the beginning of a Markdown document.
-* **Payload**: the text between the opening and closing delimiter lines, not
-  including the delimiter lines themselves.
+* **Payload**: text between the opening and closing delimiters, excluding both
+  delimiters and their surrounding line terminators. Payloads distinguish no
+  final newline from a final LF, CRLF, or CR.
 * **YAML element**: an HTML `<script>` element whose `type` attribute exactly
   equals `application/yaml`.
 
-## Markdown to HTML
+Markdown to HTML
+----------------
 
-1. Before parsing Markdown, check whether the document begins with a front
-   matter block.
+1. Before parsing Markdown, check whether the document begins with front matter.
+
 2. A delimiter is a line whose entire content is exactly `---`, excluding its
    line terminator. Surrounding whitespace is not allowed.
-3. The opening delimiter must be the first line of the document. A UTF-8
-   byte-order mark at the start of the document is not a delimiter; a document
-   whose first line is BOM followed by `---` has no front matter.
-4. The first subsequent delimiter line closes the block. A line exactly equal
-   to `---` inside the payload is therefore reserved for the closing delimiter
-   and cannot be represented as payload text.
-5. Recognize LF, CRLF, and CR as line terminators. Split the document into
-   lines without otherwise interpreting or normalizing it.
-6. For a complete block, use the text after the opening delimiter's line
-   terminator and before the line terminator immediately preceding the closing
-   delimiter as the payload. This means that payload text ending with a
-   newline has a blank line before the closing delimiter. The implementation
-   must preserve each payload character and line terminator exactly.
+
+3. The opening delimiter must be the first line. A UTF-8 byte-order mark at the
+   start is not part of a delimiter; BOM followed by `---` has no front matter.
+
+4. The first line record after the opening delimiter whose content is exactly
+   `---` closes the block. A line exactly equal to `---` inside the payload is
+   reserved for the closing delimiter and cannot be represented as payload text.
+
+5. Recognize LF, CRLF, and CR. Split without interpreting or normalizing their
+   character sequence, and retain each line record's terminator.
+
+6. Remove exactly the opening and closing delimiter line records. The payload is
+   the exact text and terminators in the intervening records. The opening
+   delimiter's terminator is not payload text.
+
+   One additional terminator may separate a nonempty unterminated payload from
+   the closing delimiter. It is reconstructed by the converter and is not in the
+   payload.
+
+   Extraction starts after the opening terminator and ends before the closing
+   delimiter's terminator. Remove exactly that closing separator and retain
+   prior intervening terminators. Thus `a\n---` yields `a`, `a\n\n---` yields
+   `a\n`, `\n---` yields an empty payload, and `\n\n---` yields `\n`. The first
+   terminator after the opening delimiter is opening-only. When a payload ends
+   in a line terminator, a blank line precedes the closing delimiter: one
+   terminator belongs to the payload and the other separates it. An empty
+   payload has neither. If the closing delimiter is not on a separate line, the
+   block is not recognized.
+
 7. If both delimiters are present, remove the front matter from the Markdown
    input passed to the Markdown renderer.
-8. Add one YAML element at the beginning of the generated HTML, before any
-   generated element. Render or omit the YAML element's text content according
-   to the reversible representation in [Preservation and error cases].
-9. Render the remaining Markdown as usual. If no complete front matter block
-   is found, render the whole document as usual and do not add a YAML element.
+
+8. Add one YAML element at the beginning of the generated HTML, before every
+   generated element. Render or omit the element's text content according to the
+   reversible representation in \[Preservation and error cases\].
+
+9. Render the remaining Markdown normally. If no complete block is found, render
+   the whole document normally and add no YAML element.
 
 For example, this Markdown:
 
@@ -67,7 +91,9 @@ For example, this Markdown:
 title: Example
 author: A Writer
 ---
-# Hello
+
+Hello
+=====
 ```
 
 is represented conceptually as:
@@ -75,94 +101,160 @@ is represented conceptually as:
 ```html
 <script type="application/yaml"
         data-codechat-yaml-encoding="base64"
-        data-codechat-yaml-base64="dGl0bGU6IEV4YW1wbGU..."></script>
+        data-codechat-yaml-base64="dGl0bGU6IEV4YW1wbGU="></script>
 <h1>Hello</h1>
 ```
 
-The precise whitespace around the element may follow the existing HTML
-serializer, but it must not become part of the YAML payload.
+Whitespace around the element may follow the existing HTML serializer, but must
+not become part of the YAML payload.
 
-## HTML to Markdown
+HTML to Markdown
+----------------
 
-1. Before converting the HTML document to Markdown, find YAML elements.
-2. A matching element is a `script` element whose `type` attribute is exactly
-   `application/yaml` (case-sensitive, with no surrounding whitespace).
-   Extra attributes are allowed. The element must be the first HTML element in
-   the document or fragment; HTML text nodes containing only whitespace before
-   it do not count.
-3. If exactly one matching element is present and it is first, decode it using
-   `data-codechat-yaml-encoding="base64"` and
-   `data-codechat-yaml-base64`. Also accept the legacy direct-text
-   representation from the example for compatibility: its `textContent`, before
-   HTML parser normalization, is the payload.
-4. Multiple matching elements are an error. An implementation must not silently
-   select or discard one. The editor must report an explicit conversion error.
-   YAML elements elsewhere than first are not recognized; they are passed to
-   the normal converter and must not be interpreted as document front matter.
-5. Exclude the recognized YAML element from the HTML passed to the normal
-   HTML-to-Markdown converter. The element must not produce visible Markdown or
-   be converted as an ordinary script or code block.
-6. Prepend a front matter block to the converted Markdown: an opening `---`
-   line, the extracted payload, and a closing `---` line.
+1. Before converting HTML to Markdown, search the document or fragment in
+   pre-order for matching YAML elements.
+2. A matching element is an HTML-namespace `script` element whose `type`
+   attribute is exactly `application/yaml`, case-sensitive, with no surrounding
+   whitespace. Extra attributes are allowed. Exclude elements inside
+   `<template>` and foreign namespaces. The first-element position is the first
+   element node in scope; whitespace-only text nodes, comments, and a doctype do
+   not prevent it. A preceding non-whitespace text node does. Exclude
+   ancestor-subtree nodes outside the root. Documents traverse the root and
+   ordinary element/fragment children; fragments traverse the root and ordinary
+   element/fragment descendants. Exclude shadow roots unless included by the
+   supplied root.
+3. If exactly one matching element is present and is first, decode it using the
+   representation rules below. If exactly one matching element is present but is
+   not first, pass it to the normal converter and do not prepend front matter.
+4. Count every match in the bounded traversal, including nested elements outside
+   the first subtree. More than one is an error at any position. Report an
+   explicit conversion error instead of selecting or discarding one. Template
+   content is excluded from counting and recognition.
+5. Recognize and exclude elements on the parsed DOM before invoking the normal
+   converter. Exclude exactly the recognized YAML element node from the HTML
+   passed to the converter. Do not remove adjacent text nodes or comments.
+   Container-only whitespace may retain the normal converter's behavior. The
+   excluded element must not produce visible Markdown or become an ordinary
+   script or code block.
+6. Prepend a front matter block to the converted Markdown using canonical LF
+   delimiters and the exact payload character sequence: `---\n` + payload + the
+   LF separator rule below + `---\n`.
 7. If no YAML element is found, convert the HTML as usual.
 
-The presence of the YAML element must not change how the rest of the document
-is converted.
+The YAML element must not change conversion of the rest of the document.
+Exclusion occurs after DOM parsing and before the normal converter; retained
+text nodes and comments keep the converter's existing behavior.
 
-## Preservation and error cases
+Preservation and error cases
+----------------------------
 
-* Preserve payload characters and ordering. In particular, do not normalize
-  indentation, spaces, comments, blank lines, YAML key ordering, or payload
-  line terminators. The recognized payload is an exact character sequence,
-  with LF, CRLF, and CR retained. The delimiter lines reconstructed by
-  HTML-to-Markdown use LF.
-* The HTML representation must be reversible and must not allow `</script>` or
-  parser-normalized text to change the payload. Implementations must encode
-  the payload's UTF-8 bytes as Base64 in
-  `data-codechat-yaml-base64`, and set
-  `data-codechat-yaml-encoding="base64"`. The element's text content should be
-  empty. A direct text representation may be emitted only as a legacy
-  compatibility fallback; it must not be used by a new implementation for
-  payload text containing a raw `</script>` sequence.
-* Do not reject a payload because it is not valid YAML. YAML validation is out
-  of scope.
-* An opening delimiter without a closing delimiter is not a complete block;
-  leave the document unchanged and render it as ordinary Markdown.
-* A closing delimiter is the first later line that exactly matches `---`.
-  Delimiter lines containing extra spaces are not recognized.
+* Preserve payload characters and ordering, including indentation, spaces,
+  comments, blank lines, YAML key order, and LF, CRLF, or CR terminators.
+  Reconstructed delimiter lines use LF.
+* Reconstruct HTML-to-Markdown as `---\n` + payload + an LF separator for a
+  nonempty payload not ending in LF, CRLF, or CR + `---\n`. An empty payload is
+  `---\n---\n`. Add no separator after a payload terminator; it separates
+  payload content from the closing delimiter. The closing delimiter's trailing
+  LF is outside the payload.
+* For a payload ending in a line terminator, reconstruction requires that
+  terminator followed by one additional separator terminator. A payload ending
+  LF is followed by `LF + LF`, CRLF by `CRLF + CRLF`, and CR by `CR + CR` before
+  the closing delimiter.
+* Base64 recognition requires `data-codechat-yaml-encoding="base64"` and exactly
+  one `data-codechat-yaml-base64` attribute. Use standard RFC 4648 Base64: only
+  `[A-Za-z0-9+/]` and trailing `=` are allowed; `=` is forbidden elsewhere,
+  whitespace and URL-safe characters are forbidden, and padding is minimal.
+  Re-encode decoded bytes and require exact attribute equality. An empty
+  attribute represents an empty payload. Decode bytes as strict UTF-8. Missing
+  or duplicate attributes, malformed or noncanonical Base64, or invalid UTF-8 is
+  an explicit conversion error; never discard the element or fall back to legacy
+  text.
+* HTML parsing must preserve attribute multiplicity or validate duplicates
+  before DOM normalization. A deduplicated DOM that cannot retain parser
+  diagnostics or reject duplicates must reject input instead of attempting
+  conversion.
+* Accept legacy direct text only when neither representation key is present. The
+  payload is the element's DOM `textContent` after HTML parsing; do not perform
+  another character-reference or parser-normalization pass. Legacy compatibility
+  is limited to historical content, and raw `</script>` is forbidden.
+  `data-codechat-yaml-encoding="base64"` requires exactly one valid Base64
+  attribute; any `data-codechat-yaml-base64` attribute requires the exact
+  encoding marker and exactly one instance of itself. No legacy fallback is
+  permitted when either key is present.
+* The HTML representation must be reversible and prevent `</script>` or parser
+  normalization from changing the payload. Base64-encode the payload's UTF-8
+  bytes in `data-codechat-yaml-base64` and set
+  `data-codechat-yaml-encoding="base64"`. Text content and child nodes must be
+  empty. New representations always serialize as `<script
+  type="application/yaml" data-codechat-yaml-encoding="base64"
+  data-codechat-yaml-base64="..."></script>` with exact case-sensitive
+  attributes and HTML namespace. Surrounding whitespace is allowed only outside
+  the element. New conversions must emit Base64; direct text may be read for
+  compatibility but must not be emitted unless a named compatibility mode is
+  explicitly enabled for data known to use the legacy format.
+* Do not reject a payload because it is invalid YAML. YAML validation is out of
+  scope.
+* An opening delimiter without a closing delimiter is incomplete; leave the
+  document unchanged and render it as ordinary Markdown.
+* A closing delimiter is the first line record after the opening delimiter whose
+  content is exactly `---`. Delimiter lines with extra spaces are not
+  recognized.
 * A payload cannot contain a line exactly equal to `---`: the first such line
-  closes the block. Supporting YAML document separators inside front matter is
+  closes the block. Supporting YAML document separators within front matter is
   outside this specification.
-* A UTF-8 BOM is not accepted as part of front-matter recognition. A BOM
-  before ordinary content, including before `---`, is ordinary document text
-  and has no special preservation rule.
-* HTML `<script>` parsing must not be allowed to split or truncate the payload.
-  HTML entity escaping is insufficient inside raw-text script content.
-* The editor's HTML processing and save/reopen path must retain the YAML
-  element, and the element must not appear as visible document content.
+* A UTF-8 BOM is not accepted as part of front-matter recognition. A BOM before
+  ordinary content, including before `---`, is ordinary document text and has no
+  special preservation rule.
+* `<script>` parsing must not split or truncate the payload. HTML entity
+  escaping is insufficient in raw-text script content.
+* The YAML element must survive DOM serialization, sanitization, save/reopen,
+  undo/redo, and copy/paste without losing its type or representation
+  attributes. In-editor operations must preserve the element and both Base64
+  attributes. External sanitization or import that removes it or them must
+  produce an explicit conversion or import error, not normal text. A separate
+  editor model may retain it only if it reinserts the element before every HTML
+  conversion and preserves it across undo/redo and copy/paste DOM state. The
+  element must not be visible.
+* Exclude every element in `<template>` content fragments. Shadow roots are
+  outside traversal unless the supplied root expressly includes them.
 
-## Acceptance tests
+Acceptance tests
+----------------
 
 At minimum, tests must cover:
 
-* A document with front matter converts to HTML with exactly one YAML element
-  and converts back with the payload unchanged.
-* Markdown after the closing delimiter is still rendered and converted
-  normally.
-* A document without front matter converts as before and does not gain a YAML
-  element.
-* An empty payload and a payload containing comments, blank lines, indentation,
-  colons, non-ASCII text, and an exact `</script>` sequence are preserved.
-* Payload and line terminator round trips cover LF, CRLF, CR, an empty payload,
-  a payload with no final newline, and a payload with a final newline.
-* A BOM, delimiter lines with surrounding whitespace, and an unclosed opening
-  delimiter follow the specified recognition rules.
-* HTML without a YAML element converts as before.
-* HTML with a first YAML element is excluded from ordinary Markdown conversion.
+* A document with front matter converts to HTML with one YAML element and back
+  with the payload unchanged; following Markdown is converted normally.
+* A document without front matter converts as before without gaining an element.
+* Empty and populated payloads preserve comments, blank lines, indentation,
+  colons, non-ASCII text, and an exact `</script>` sequence.
+* Round trips cover LF, CRLF, CR, empty payloads, and payloads with and without
+  final newlines, including mixed terminators within one payload.
+* Test a BOM, whitespace around delimiter lines, and an unclosed opening
+  delimiter.
+* HTML without a YAML element converts as before; a first YAML element is
+  excluded from ordinary Markdown conversion.
 * A second YAML element causes an explicit error and is never silently
   discarded.
-* A YAML element that is not the first HTML element is not recognized as front
-  matter.
+* A YAML element not first in the HTML is not recognized as front matter.
 * `type="APPLICATION/YAML"` and `type="application/yaml "` are not matches.
-* Opening and saving a document through the real editor HTML serializer/parser
-  does not display or remove the metadata.
+* Missing or duplicate Base64 attributes, conflicting representation attributes,
+  malformed or noncanonical Base64, and Base64 decoding to invalid UTF-8 report
+  explicit conversion errors.
+* Nested YAML elements and elements inside `<template>` or foreign namespaces
+  follow the bounded discovery rules and do not cause accidental recognition.
+* The real editor serializer/parser does not display or remove metadata when
+  opening and saving.
+
+Change notes
+------------
+
+* Approximate length reduction: 2,156 to 1,833 words (about 15.0%).
+* Merged repeated delimiter and closing-line explanations in Markdown-to-HTML
+  and related preservation rules.
+* Tightened repeated HTML traversal, exclusion, and Base64 conversion rules
+  while retaining the same requirements and acceptance criteria.
+* No authored pull-request comments, review comments, open issues, TODOs, or
+  risks were identified, altered, or removed.
+* No contradictions or ambiguities were resolved. Uncertain cases were retained.
+* All comments/issues preserved: 0 of 0.
