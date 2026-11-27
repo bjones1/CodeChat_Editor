@@ -142,12 +142,12 @@ example fragment tag, after cache hydration: `<fragment id="id1"
 contenteditable="false">See <a href="path/to/gather#bar">Bazzy things</a>, <a
 href="path/to/another/gather#zap">Zappy things</a></fragment>`. A fragment's
 content by default includes the content of the current doc block and the content
-of the following code/doc block; fragments are not allowed in Markdown documents
-(in this case, the fragment content consists of an error message). Fragments may
-include the `following` attribute to enclose a specific number of the following
-code/doc blocks; for example, `<fragment id="bar" following="3"></fragment>`
-includes the current doc block along with the next 3 code/doc blocks;
-`following` must be a whole number.
+of the following code/doc block. Fragments may include the `following` attribute
+to enclose a specific number of the following code/doc blocks; for example,
+`<fragment id="bar" following="3"></fragment>` includes the current doc block
+along with the next 3 code/doc blocks; `following` must be a whole number. A
+fragment in a Markdown document encloses part of that document instead; see
+<xref ref="cc-ZszaFgeYb4"></xref>.
 
 Details:
 
@@ -216,6 +216,84 @@ things</h3>`:
   (last item content)
 </div>
 ```
+
+<h3 id="cc-ZszaFgeYb4">Fragments in Markdown documents</h3>
+
+A Markdown document has no code/doc blocks. Its unit of structure is instead the
+section which a heading introduces, and its blocks are the top-level elements of
+its rendered HTML: paragraphs, headings, lists, block quotes, code blocks,
+tables, and so on. A fragment in a Markdown document encloses:
+
+* By default, the block containing the `<fragment>` tag through the end of the
+  current section -- everything before the next heading of the same or a higher
+  level. Subsections belong to the fragment. Placing the tag in a heading, such
+  as `## Parsing <fragment id="parsing"></fragment>`, therefore encloses that
+  heading's entire section, which is the recommended placement. A fragment
+  before the document's first heading ends at the first heading of any level.
+* With `following="n"`, the block containing the tag followed by the next `n`
+  blocks, just as in a source file: `following="0"` encloses only the block
+  containing the tag, and `n` is clamped at the end of the document.
+
+Details:
+
+* Only top-level elements count as blocks. A fragment inside a list item or a
+  block quote therefore begins with the entire list or block quote.
+* The fragment's content is the cleaned, hydrated HTML of the blocks it
+  encloses. Unlike a source file's fragment, it carries no line numbers or
+  indents: a Markdown document's layout is its rendered HTML.
+* Every other rule in <xref ref="cc-gKXTXIZnFm"></xref> applies unchanged. In
+  particular, a fragment whose blocks include a gather element is an error; give
+  it a `following` attribute which stops before the gather element.
+
+#### Rationale
+
+Four definitions of a Markdown fragment were considered:
+
+1. Everything in the heading which contains the tag.
+2. Only the text inside the fragment tag, as in `<fragment id="x">enclosed
+   text</fragment>`.
+3. Everything from the tag until a new end-of-fragment tag.
+4. Everything from the tag to the end of the current section, with `following`
+   selecting a precise number of blocks instead. This is the definition chosen.
+
+Option 4 is consistent with fragments in source files. There, a fragment begins
+at the block holding its tag and extends forward over the structure after it,
+with no closing marker; `following` counts the blocks it encloses. A Markdown
+fragment works the same way, using the section as its natural default and giving
+`following` the same meaning, so a user who knows fragments in source files
+learns only one new default. It also subsumes option 1: a fragment in a heading
+encloses exactly that heading's section, while one placed later in a section
+can skip the section's introduction.
+
+It holds up as a document is edited. Paragraphs or subsections added to a
+section join the fragment automatically, and there are no paired tags to keep
+balanced. The fragment's extent follows the document's outline, which a reader
+already sees. Finally, the tag remains a single, empty element, so hoisting,
+backlink hydration, dehydration, and the HTML-to-Markdown round trip on save all
+work without change.
+
+Option 2 contradicts the rule that a fragment has no content: hydration replaces
+a fragment's content with its backlinks and marks the tag `contenteditable=false`,
+so the enclosed text could no longer be edited in the Client. It also fails in
+Markdown itself, where an HTML block ends at a blank line: a fragment spanning
+several paragraphs would leave its Markdown unparsed or split its tags apart.
+
+Option 3 needs paired tags, each pair able to go wrong in new ways -- a missing
+end tag, an end tag with no start, overlapping or nested pairs -- and each would
+need its own error. In a WYSIWYG editor, the empty end tag is easy to delete or
+move without noticing. Source fragments have no end tag, so this would also make
+the two kinds of fragment inconsistent. The case it serves, a fragment narrower
+than its section, is covered by `following` without these failure modes.
+
+The cost of this choice is that a fragment in a long section may enclose more
+than its author meant, and that a `following` count, as in a source file,
+shifts when blocks are inserted in its range. The default keeps the first case
+visible: the gathered content shows the whole section, prompting the author to
+add `following`.
+
+<h4 data-gather="cc-ESj0YpSZci cc-4vz03vBRfB" id="cc-tyu1UonAwj">
+  Implementation of Fragments in Markdown documents
+</h4>
 
 <h3 data-gather="cc-St8Bme4paE" id="cc-sOVPXHcva8">
   Implementation of Fragments and gather elements
