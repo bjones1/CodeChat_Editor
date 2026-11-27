@@ -18,7 +18,8 @@ A signed-in user is identified by the pair `tid`/`oid` from the ID token. The
 `name` claim is used only for display.
 
 Any signed-in user may create a survey and becomes its organizer. Only the
-organizer of a survey can view or change it.
+organizer of a survey can change its settings, close it, or see submissions and
+results.
 
 Surveys
 -------
@@ -29,7 +30,9 @@ To create a survey, the organizer provides:
   sign-in name (`preferred_username`, such as `jdoe@school.edu`) and is compared
   case-insensitively. Blank lines and duplicates are dropped.
 * **Projects**: project names, one per line. Blank lines and duplicates are
-  dropped.
+  dropped. A name equal to another project's name followed by a space and a
+  number (`htmd fuzzer 2` beside `htmd fuzzer`) is rejected, since the CSV uses
+  such names for extra groups.
 * **Group size** `m`: an integer of at least 2.
 * **Project weight** `w`: a number from 0 to 1, default 0.5. The teammate
   weight is `1 − w`.
@@ -38,13 +41,13 @@ To create a survey, the organizer provides:
 
 The app rejects a survey with fewer than 2 students or fewer than 1 project.
 After creation, the roster and project list cannot be changed; the organizer
-creates a new survey instead. `w` and `c` can be changed until the survey is
-closed.
+creates a new survey instead. `m`, `w` and `c` can be changed at any time.
 
 Creating a survey produces a link containing a random, unguessable token. The
-organizer posts this link.
+organizer posts this link and sees which students have submitted so far.
 
-A survey is **open** until the organizer closes it. Closing is final.
+A survey is **open** until the organizer closes it. Closing is final and only
+stops students from submitting; the organizer can still form groups.
 
 Student flow
 ------------
@@ -103,7 +106,8 @@ A student's **satisfaction** with an assignment is
 `w · P + (1 − w) · T`
 
 where `P` is the student's score for the group's project and `T` is the mean of
-the student's scores for the other members of the group.
+the student's scores for the other members of the group, or 0 in a group of one
+(possible when `m = 2` and `n` is odd).
 
 The **quality** of an assignment is the sum of all students' satisfaction. One
 assignment is **better** than another if its quality is higher, or if the
@@ -118,7 +122,8 @@ search:
 1. **Start.** Shuffle the roster with a pseudo-random generator seeded from the
    survey id and the restart number, then fill the groups in that order, largest
    groups first.
-2. **Assign projects.** Given the groups, assign projects to maximize quality.
+2. **Assign projects.** Given the groups, assign projects to maximize the sum of
+   `w · P` over all students; the teammate part does not depend on projects.
    This is a weighted assignment problem with `c` copies of each project, solved
    exactly with `scipy.optimize.linear_sum_assignment`.
 3. **Improve members.** With projects fixed, consider every swap of two
@@ -149,8 +154,8 @@ asmith@school.edu,htmd fuzzer 2
 
 There is one row per student, sorted by team and then userid. `team` is the
 project name for the project's first group; further groups of the same project
-are named `<project> 2`, `<project> 3`, and so on, in the order the algorithm
-produced them.
+are named `<project> 2`, `<project> 3`, and so on. A project's groups are
+numbered in order of the alphabetically first userid in each group.
 
 Design decisions
 ----------------
@@ -195,8 +200,8 @@ Testing
    most one, and none exceeds `m`.
 3. **Algorithm invariants**: every student is in exactly one group, no project
    exceeds `c` groups, and repeated runs give identical output.
-4. **Algorithm quality**: on fixed random instances with `n ≤ 8`, the result
-   equals the optimum found by exhaustive search.
+4. **Algorithm quality**: on fixed random instances with `n ≤ 8`, the result's
+   quality equals the optimum found by exhaustive search.
 5. **Sign-in**: with MSAL mocked, an unlisted userid is rejected, a listed one
    is bound to its `tid`/`oid`, and a renamed account is still recognized.
 6. **CSV**: the export of a known result matches an expected file exactly.
