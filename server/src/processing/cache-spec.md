@@ -56,10 +56,12 @@ attribute-encoded (see below), its serialized form is encoded twice.
 
 Details:
 
-* This element allows no attribute except for `ref`; all other attributes are
-  silently stripped during hydration. In particular, an `<xref>` is never a
-  `Target`, so an `id` attribute is stripped. While hydration temporarily adds
-  the `data-content` and `contenteditable` attributes, dehydration removes them.
+* This element allows no attribute except for `ref` and `id`; all other
+  attributes are silently stripped during hydration. An `id` makes the `<xref>`
+  a bidirectional cross-reference (see <xref ref="cc-iTel6hXYKI"></xref>), not a
+  `Target`; both hydration and dehydration keep it, since the backlink links to
+  it. While hydration temporarily adds the `data-content` and `contenteditable`
+  attributes, dehydration removes them.
 
 * The `<xref>` is marked `contenteditable="false"`; the optional content cannot
   be edited in the Client.
@@ -127,6 +129,145 @@ Details:
   * Cross-references to fragments are not allowed. Without optional content this
     would create a circular dependency (see <xref ref="cc-P-g5o100jN"></xref>);
     with it, there is none, but a single rule is simpler.
+
+<h3 id="cc-iTel6hXYKI">Bidirectional cross-references</h3>
+
+An `<xref>` which carries an `id`, such as `<xref ref="req-3" id="design-7">`,
+is a *bidirectional cross-reference*: in addition to the link from the `<xref>`
+to its target, the target displays a *backlink*, a link from the target back to
+the `<xref>`. An `<xref>` without an `id` is a one-way cross-reference and
+behaves exactly as described above. This supports a hierarchy of specifications
+(concept, requirements, detailed design), where a reader follows an `<xref>`
+down one level and a backlink back up.
+
+The design mirrors the fragment and gather element pair (see
+<xref ref="cc-gKXTXIZnFm"></xref>), which is already bidirectional: the
+bidirectional cross-reference plays the role of the gather element, since its
+reference is written in the source, while its target plays the role of the
+fragment, since it renders backlinks computed from the references which name it.
+The core rules are:
+
+* **Identity.** The `<xref>`'s `id` belongs to the project's single id
+  namespace, so it must be a valid CSS identifier and unique in the project (see
+  <xref ref="cc-P-g5o100jN"></xref>, "Missing and duplicate ids"); it is also
+  the anchor the backlink links to. It counts as a definition of its id exactly
+  as a target or fragment does, so an `IdEntry` whose id is defined by both a
+  bidirectional cross-reference and a target, fragment, or second
+  bidirectional cross-reference is `IdState::Multiple`. A bidirectional
+  cross-reference is neither a `Target` nor a `Fragment`, so neither another
+  `<xref>` nor a `data-gather` list may refer to it; such a reference renders
+  an error message. Its displayed content is itself the output of
+  cross-reference hydration, so allowing this would make the hydration of one
+  `<xref>` depend on that of another.
+* **Backlink data.** For each bidirectional cross-reference, the cache records
+  its containing file, `id`, `ref`, and *backlink text*, the content of the
+  backlink's link. Like `Target::inner_html`, each of these is computed from
+  the source of the `<xref>`'s file before hydration, so it depends on nothing
+  else in the cache; in particular, the backlink text never includes the
+  target's inner HTML. TODO (Pavel): define how the backlink text is computed;
+  replace this note with a cross-reference to that definition once it exists.
+* **Rendering.** Hydration adds to each target one backlink per bidirectional
+  cross-reference which names it, ordered by containing file and then by `id`,
+  as fragment backlinks are. This markup is marked `contenteditable="false"`,
+  exists only in the Client, and is removed by dehydration, like a gather list.
+  TODO (Pavel): specify where the markup goes for an inline target, a block
+  target, and a gather element, and which elements carry the `cc-backlinks`
+  class; replace this note with a cross-reference to that subsection once it
+  exists.
+* **Coherence.** Backlinks are excluded from `Target::inner_html`,
+  `Fragment::content`, and the optional content of any `<xref>`, just as
+  fragment backlinks are excluded from `Fragment::content`. Were they included,
+  a new backlink would change the target's inner HTML, outdating every file
+  which references the target, including the file of the `<xref>` which
+  produced the backlink. Since nothing reads a target's backlinks, rebuilding
+  the target's file to update them outdates nothing further, so propagation
+  still terminates.
+* **Reverse edge.** As with gather elements, the set of bidirectional
+  cross-references which name a target is observable output in the target's
+  file, so the unlink-all/relink-all round trip used for one-way
+  cross-references cannot detect a change to it (see "Gather elements: the
+  reverse edge" under <xref ref="cc-P-g5o100jN"></xref>). Instead, committing a
+  file diffs its old and new bidirectional cross-references, matched by `id`,
+  and outdates the file of each target whose backlinks were added, removed, or
+  changed; when a bidirectional cross-reference's `ref` changes, this outdates
+  the files of both the old and the new target. One-way cross-references keep
+  the round trip.
+
+This design reuses the fragment and gather element machinery because that pair
+already solves the hard part, cache coherence: its layering is known to
+converge and its reverse edge is known to terminate, so the new feature adds
+only one more definition kind, one more diff in `commit_file`, and one more
+class of generated markup. Three alternatives were rejected:
+
+* Making every `<xref>` bidirectional. A backlink needs an anchor to link to,
+  and assigning an `id` to every `<xref>` automatically would rewrite the
+  user's source; an explicit, optional `id` also leaves existing documents
+  unchanged.
+* Writing backlinks into the target's source. Everything the cache derives is
+  hydrated in the Client and removed by dehydration, so it never reaches the
+  source; written backlinks would instead require the Server to rewrite the
+  target's file whenever any `<xref>` naming it changed, including files open
+  in the IDE. The cache writes source only under the `SaveOnScan` option (see
+  "Consumer" below), which is user-selected precisely because it may rewrite
+  files open in the IDE, and it never renames duplicate ids since that would
+  silently modify user content (see "Missing and duplicate ids" under
+  <xref ref="cc-P-g5o100jN"></xref>).
+* Requiring the user to place an element at the target to receive backlinks,
+  as a `<fragment>` must be placed. Both ends would then need manual upkeep,
+  while the goal is that editing one end updates the other.
+
+A bidirectional cross-reference reports the same errors in its `ref` as a
+one-way cross-reference (see the Details above). Its `id` is checked
+independently of its `ref`, and the backlink exists only when both are valid:
+
+* **Invalid `id`.** An `id` which is not a valid CSS identifier, including the
+  empty `id=""`, renders an error message in place of the `<xref>`'s content,
+  as for any invalid id (see <xref ref="cc-gKXTXIZnFm"></xref>). It defines no
+  id and produces no backlink.
+* **Duplicate `id`.** A valid `id` always counts as a definition, even when the
+  `ref` has an error, so that uniqueness doesn't depend on the `ref`. When its
+  `IdState` is `Multiple`, the `<xref>` renders an error message naming the
+  duplicate and produces no backlink. Every bidirectional cross-reference which
+  produces a backlink therefore has a unique `id`, so matching old and new ones
+  by `id` when committing a file is unambiguous.
+* **`ref` errors.** When the `ref` is missing, invalid, not found, duplicated,
+  or names a fragment or a bidirectional cross-reference (including the
+  `<xref>` itself, as in `<xref ref="x" id="x">`), the `<xref>` renders the
+  one-way error message and no backlink appears anywhere. The `id` still
+  defines its anchor, and the backlink appears once the `ref` resolves to a
+  `Target` or gather element.
+* When both the `id` and the `ref` have errors, the message reports both.
+* **Nested `<xref>`.** An `<xref>` with an `id` inside the optional content of
+  another `<xref>` keeps its `id` in the source, since `data-content` preserves
+  that content verbatim, but is never hydrated: cleaning unwraps it (see
+  <xref ref="cc-2dkkF9YJnL"></xref>). It therefore defines no id and produces no
+  backlink.
+
+Two sanitizers must preserve both new pieces of markup, since each removes the
+attributes and classes it doesn't allow:
+
+* The Server sanitizes all hydrated HTML before sending it to the Client
+  (`minify` in `processing.rs`). It already allows `id` on every element, but
+  allows classes only per element, so it must allow `cc-backlinks` (see below),
+  plus `contenteditable` on each element the backlink markup uses.
+* In the Client, the `<xref>` entry in `extended_valid_elements` in
+  `tinymce-config.mts` must allow `id` in addition to `contenteditable` and
+  `ref`; otherwise TinyMCE strips the `id`, and the next save turns the
+  bidirectional cross-reference into a one-way one. A bidirectional
+  cross-reference is still an inline element, so `custom_elements` keeps
+  `~xref` unchanged.
+* The backlink markup uses only standard HTML elements, marked by a class and
+  `contenteditable="false"`, as the gather list does, so TinyMCE's default
+  schema keeps it and no new custom element is needed.
+
+Dehydration recognizes the backlink markup by its reserved class,
+`cc-backlinks`, and removes each element carrying it, together with its
+contents, wherever it appears, as it removes a gather list; this also discards a
+copy the user pasted elsewhere. Matching by class rather than by position keeps
+dehydration independent of where the markup is placed. The `<xref>` itself
+dehydrates exactly as a one-way cross-reference, except that its `id` is kept:
+`contenteditable` and `data-content` are removed and the optional content is
+restored from `data-content`.
 
 <h3
   data-gather="cc-49851a1jdJ cc-BHC6fJQ8bU cc-MwcxCRjY8b cc-FqIILGgnfo"
@@ -230,11 +371,12 @@ gather elements; search will not include `Fragment` content.
 Auto-assignment of ids
 ----------------------
 
-If `id="*"` on either a fragment, target, or gather element, the cache replaces
-this with a random autogenerated `id` placed in the resulting HTML content, but
-this new `id` is not yet recorded in the cache. It enters the cache only when
-source containing it is next translated: the Server translates each edit the
-Client saves back to the Client, to check for changes, which commits the edit;
+If `id="*"` on a fragment, target, gather element, or `<xref>` (making it a
+bidirectional cross-reference), the cache replaces this with a random
+autogenerated `id` placed in the resulting HTML content, but this new `id` is
+not yet recorded in the cache. It enters the cache only when source containing
+it is next translated: the Server translates each edit the Client saves back to
+the Client, to check for changes, which commits the edit;
 otherwise, the consumer reads the file once it's written to disk. This helps
 avoid cases where the cache and file content become unsynchronized: if the `id`
 is placed in the cache before the write and the write fails, or if the file is
