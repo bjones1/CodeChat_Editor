@@ -219,17 +219,21 @@ things</h3>`:
 
 <h3 id="cc-ZszaFgeYb4">Fragments in Markdown documents</h3>
 
-A Markdown document has no code/doc blocks. Its unit of structure is instead the
-section which a heading introduces, and its blocks are the top-level elements of
-its rendered HTML: paragraphs, headings, lists, block quotes, code blocks,
-tables, and so on. A fragment in a Markdown document encloses:
+This section applies to Markdown documents, not to Markdown in a source file's
+doc blocks: a fragment there encloses code/doc blocks as described above, even
+when its doc block contains headings. A Markdown document has no code/doc
+blocks. Its unit of structure is instead the section which a heading introduces,
+and its blocks are the top-level elements of its rendered HTML: paragraphs,
+headings, lists, block quotes, code blocks, tables, and so on. A fragment in a
+Markdown document encloses:
 
 * By default, the block containing the `<fragment>` tag through the end of the
   current section -- everything before the next heading of the same or a higher
   level. Subsections belong to the fragment. Placing the tag in a heading, such
   as `## Parsing <fragment id="parsing"></fragment>`, therefore encloses that
-  heading's entire section, which is the recommended placement. A fragment
-  before the document's first heading ends at the first heading of any level.
+  heading, which the gathered content shows first, and its entire section. This
+  is the recommended placement. A fragment before the document's first heading
+  ends at the first heading of any level.
 * With `following="n"`, the block containing the tag followed by the next `n`
   blocks, just as in a source file: `following="0"` encloses only the block
   containing the tag, and `n` is clamped at the end of the document.
@@ -237,11 +241,21 @@ tables, and so on. A fragment in a Markdown document encloses:
 Details:
 
 * Only top-level elements count as blocks. A fragment inside a list item or a
-  block quote therefore begins with the entire list or block quote.
+  block quote therefore begins with the entire list or block quote. Likewise,
+  only a top-level heading ends a section; a heading inside a block quote or a
+  list is enclosed like any other content. A heading written in HTML, such as a
+  gather element's `<h3 id="..." data-gather="...">`, counts the same as one
+  written in Markdown.
+* Whitespace and comments between blocks belong to the block before them, so a
+  comment just after a fragment's last block is part of the fragment.
+* A tag on a line of its own becomes a paragraph containing only the tag, which
+  the gathered content shows as an empty paragraph. Place the tag in a heading
+  or at the start of a paragraph's text instead.
 * The fragment's content is the cleaned, hydrated HTML of the blocks it
   encloses. Unlike a source file's fragment, it carries no line numbers or
   indents: a Markdown document's layout is its rendered HTML.
-* Every other rule in <xref ref="cc-gKXTXIZnFm"></xref> applies unchanged. In
+* Every other rule in <xref ref="cc-gKXTXIZnFm"></xref> applies, reading "block"
+  for "code/doc block", except that on reproducing a source file's layout. In
   particular, a fragment whose blocks include a gather element is an error; give
   it a `following` attribute which stops before the gather element.
 
@@ -427,9 +441,11 @@ work without change.
 
 Option 2 contradicts the rule that a fragment has no content: hydration replaces
 a fragment's content with its backlinks and marks the tag `contenteditable=false`,
-so the enclosed text could no longer be edited in the Client. It also fails in
-Markdown itself, where an HTML block ends at a blank line: a fragment spanning
-several paragraphs would leave its Markdown unparsed or split its tags apart.
+so the enclosed text could no longer be edited in the Client, and hoisting moves
+anything inside a `<fragment>` to after it, so the text would not stay enclosed.
+It also fails in Markdown itself: a line holding only `<fragment id="x">` starts
+an HTML block, so the Markdown after it, up to the next blank line, is left
+unparsed.
 
 Option 3 needs paired tags, each pair able to go wrong in new ways -- a missing
 end tag, an end tag with no start, overlapping or nested pairs -- and each would
