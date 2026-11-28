@@ -247,10 +247,11 @@ Details:
 
 #### Examples
 
-Each row shows the blocks of a Markdown document, one per entry, and the blocks
-which fragment `f` encloses. The fragment's content never includes its own tag
-or backlinks. Every row has a matching `test_markdown_fragment_*` test in
-`tests.rs`.
+Each row shows the top-level blocks of a Markdown document, one per entry, and
+the blocks which fragment `f` encloses. `<fragment id="f">` stands for an empty
+tag, `<fragment id="f"></fragment>`, followed by the rest of its block. The
+fragment's content never includes its own tag or backlinks. Every row has a
+matching `test_markdown_fragment_*` test in `tests.rs`.
 
 | Case | Blocks of the document | `f` encloses |
 | ---- | ---------------------- | ------------ |
@@ -259,13 +260,13 @@ or backlinks. Every row has a matching `test_markdown_fragment_*` test in
 | A higher heading ends a section, a deeper one does not | `### C <fragment id="f">`, `#### C.1`, `## D` | `### C`, `#### C.1` |
 | Empty section | `## A <fragment id="f">`, `## B`, `Text.` | `## A` only |
 | Last section | `# Title`, `## A <fragment id="f">`, `One.`, `Two.` | `## A`, `One.`, `Two.` |
-| Before the first heading | `* First.`, `* Second <fragment id="f">`, `After.`, `###### Low`, `Excluded.` | the list, `After.` |
+| Before the first heading | a list `* First.` / `* Second <fragment id="f">`, `After.`, `###### Low`, `Excluded.` | the list, `After.` |
 | No headings | `<fragment id="f">One.`, `Two.` | `One.`, `Two.` |
-| Tag inside a block quote or a table | `Before.`, a block quote whose last paragraph holds the tag, `After.` | the whole block quote, `After.` |
+| Tag inside a block quote (a table behaves the same way) | `Before.`, a block quote whose last paragraph holds the tag, `After.` | the whole block quote, `After.` |
 | `following="0"` | `<fragment id="f" following="0">Start.`, `## H`, `After.`, `End.` | `Start.` |
 | `following="2"` | the same document | `Start.`, `## H`, `After.`: a heading counts as a block |
 | `following="99"` | the same document | all four blocks: the count stops at the end |
-| A comment between blocks | `<fragment id="f" following="1">Start.`, `<!-- A note. -->`, `Next.`, `Excluded.` | `Start.`, the comment, `Next.`: a comment is carried along but not counted |
+| A comment between blocks | `<fragment id="f" following="1">Start.`, `<!-- A note. -->`, `Next.`, `Excluded.` | `Start.`, the comment, `Next.`: a comment is carried along with the block before it, but not counted |
 | Two fragments, one inside the other's section | `## Outer <fragment id="f">`, `Intro.`, `### Inner <fragment id="g">`, `Body.`, `## Next` | `f`: `## Outer` to `Body.`; `g`: `### Inner`, `Body.` |
 | Setext heading | `A <fragment id="f">` underlined with `-`, `Text.`, `### Deeper`, `B` underlined with `-` | `A`, `Text.`, `### Deeper` |
 
@@ -273,18 +274,23 @@ or backlinks. Every row has a matching `test_markdown_fragment_*` test in
 
 * A fragment tag in a code span or a fenced code block is text, so no fragment
   exists.
-* An `id` which is not a valid CSS identifier (`1x`) replaces the fragment with
-  an error, and no fragment is stored.
+* An `id` which is not a valid CSS identifier (`1x`) hydrates the tag to an
+  error, and no fragment is stored.
 * `following` must be a whole number. Spaces around it are accepted (`" 1 "`);
   `x`, `-1`, `1.5` and an empty value each show an error.
 * A gather element anywhere among the enclosed blocks, even inside a block
-  quote, makes the fragment an error. A `following` which stops before the
-  gather element removes the error.
+  quote, makes the fragment an error. A `following` which stops before a gather
+  element in a later block removes the error. A gather element in the same
+  top-level block as the tag cannot be excluded: move the tag to another block.
+* Only top-level headings bound a section. A heading inside a block quote or a
+  list starts nothing: a fragment in it begins with the whole block quote or
+  list, and runs to the end of the enclosing top-level section.
 * Text placed inside the tag (`<fragment id="f">Title</fragment>`) moves after
   the tag and stays in the fragment.
 * A gather element may list a fragment from its own document.
-* A block added to a fragment's section joins the fragment, and every document
-  which gathers the fragment is updated.
+* A block added to a fragment's section joins the fragment. Every document which
+  gathers the fragment is marked outdated, and lists the new block when it is
+  next rendered.
 
 #### Rationale
 
