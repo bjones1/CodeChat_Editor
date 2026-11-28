@@ -253,20 +253,22 @@ fragment's document is hydrated, as follows:
 
 1. Hydrate the document's cross-references, math, diagrams, and fragment
    backlinks, but not its gather lists, which depend on fragment contents.
-2. Serialize the outer HTML of each enclosed block, in document order. Comments
-   and whitespace after each enclosed block, up to the next block outside the
-   fragment, come along.
-3. Clean this HTML as for any fragment (see
-   <xref ref="cc-2dkkF9YJnL"></xref>). Among other things, this removes every
-   `id` and `data-gather`, so that the gathered copy defines no target or
-   gather element and duplicates no id; removes every `<fragment>` along with
-   its backlinks, including those of other fragments in the same blocks; and
-   keeps a `contenteditable` of `false` only on `<span>` and `<xref>`, the
-   markers which math and cross-reference hydration add.
+2. Serialize the outer HTML of each enclosed block, in document order. The
+   comments and whitespace between enclosed blocks come along, as do those
+   following the last one, up to the next block outside the fragment; those
+   preceding the first enclosed block don't.
+3. Clean this HTML with the fragment cleaner, `CLEAN_FRAGMENT_HTML` in
+   `processing.rs`, which holds the complete rules. Among other things, it
+   removes every `id` and `data-gather`, so that the gathered copy defines no
+   target or gather element and duplicates no id; removes every `<fragment>`
+   along with its backlinks, including those of other fragments in the same
+   blocks; and keeps a `contenteditable` of `false` only on `<span>` and
+   `<xref>`, the markers which math and cross-reference hydration add.
 
-The result is therefore the document's own HTML, not a reproduction of its
-source, which is why it lacks the line numbers and indents noted under
-"Details" above.
+Since step 2 copies the rendered blocks themselves, the result is the
+document's own HTML, not a reproduction of its source: it has none of the line
+numbers, indents, or `cc-fragment-*` wrappers of a source file's fragment, as
+noted under "Details" above.
 
 Consequences:
 
@@ -279,9 +281,8 @@ Consequences:
   any fragment; see <xref ref="cc-gKXTXIZnFm"></xref>.
 * Relative URLs, such as an image's `src="img/plot.svg"`, are copied unchanged,
   so a gathering document in another directory resolves them against its own
-  location. Source-file fragments share this limitation. TODO: rewrite relative
-  URLs to resolve from the fragment's document; remove this once gathered
-  content is relocated.
+  location. As for all cleaned HTML, such URLs aren't supported; see
+  <xref ref="cc-2dkkF9YJnL"></xref>.
 
 #### Examples
 
