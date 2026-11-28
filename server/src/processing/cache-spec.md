@@ -266,15 +266,20 @@ matching `test_markdown_fragment_*` test in `tests.rs`.
 | `following="0"` | `<fragment id="f" following="0">Start.`, `## H`, `After.`, `End.` | `Start.` |
 | `following="2"` | the same document | `Start.`, `## H`, `After.`: a heading counts as a block |
 | `following="99"` | the same document | all four blocks: the count stops at the end |
-| A comment between blocks | `<fragment id="f" following="1">Start.`, `<!-- A note. -->`, `Next.`, `Excluded.` | `Start.`, the comment, `Next.`: a comment is carried along with the block before it, but not counted, so one after the last enclosed block is enclosed too |
+| A comment between blocks | `<fragment id="f" following="1">Start.`, `<!-- A note. -->`, `Next.`, `Excluded.` | `Start.`, the comment, `Next.`: a comment is carried along, but not counted |
 | Two fragments, one inside the other's section | `## Outer <fragment id="f">`, `Intro.`, `### Inner <fragment id="g">`, `Body.`, `## Next` | `f`: `## Outer` to `Body.`; `g`: `### Inner`, `Body.` |
 | Setext heading | `A <fragment id="f">` underlined with `-` (level 2), `Text.`, `### Deeper`, `B` underlined with `-` | `A`, `Text.`, `### Deeper` |
 
 #### Edge cases and errors
 
-Each bullet has a test, except those marked "(untested)", which follow from
-`markdown_fragment_range` in `processing.rs`.
+These bullets describe the code in `processing.rs`; not each one has its own
+test.
 
+* Blocks are counted in the rendered HTML, not in the Markdown source: a blank
+  line or a link reference definition is no block. A tag alone in its own
+  paragraph is therefore a block of its own, an empty paragraph, so the
+  fragment begins with it and `following="0"` encloses nothing visible. Put the
+  tag on the same line as the block it starts, as the examples do.
 * A fragment tag in a code span or a fenced code block is text, so no fragment
   exists.
 * An `id` which is not a valid CSS identifier (`1x`) hydrates the tag to an
@@ -285,17 +290,18 @@ Each bullet has a test, except those marked "(untested)", which follow from
 * A gather element anywhere among the enclosed blocks, even inside a block
   quote, makes the fragment's content an error: gather elements listing it show
   the error, while the tag keeps its backlinks. A `following` which stops before
-  a gather element in a later block removes the error. (Untested:) a gather
-  element in the same top-level block as the tag cannot be excluded, so move
-  the tag to another block.
-* (Untested.) Only top-level headings bound a section. A raw HTML heading such
+  a gather element in a later block removes the error. A gather element in the
+  same top-level block as the tag cannot be excluded, so move the tag to
+  another block.
+* Only top-level headings bound a section. A raw HTML heading such
   as `<h2 id="b">B</h2>` is top-level and bounds a section like `## B`. A
   heading inside a block quote, a list or a raw HTML container such as `<div>`
   starts nothing: a fragment in it begins with that whole block, and runs to
   the end of the enclosing top-level section.
 * Text placed inside the tag (`<fragment id="f">Title</fragment>`) moves after
   the tag and stays in the fragment.
-* A gather element may list a fragment from its own document.
+* A gather element may list a fragment from its own document, as long as it
+  lies outside the fragment's blocks; inside them, it is the error above.
 * A block added to a fragment's section joins the fragment. Every document which
   gathers the fragment is marked outdated, and lists the new block when it is
   next rendered.
