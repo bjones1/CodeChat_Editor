@@ -52,11 +52,13 @@ Definitions
   including the next heading at the same or a higher level (a lower or equal
   number), or to the end of the document. The heading itself isn't part of its
   section. A section may be empty.
-* **Heading key:** the tuple of a heading's level, its text in the HTML the
-  Server sends (before the Client renders any math in it), and its 1-based
+* **Heading key:** the tuple of a heading's level, its text, and its 1-based
   occurrence among headings with that same level and text in document order.
-  This key is used only to restore collapsed state after a content update from
-  the Server (rule 9); it is not a saved id.
+  The text is the heading's `textContent` in the Client's current content, as
+  the Client would send it to the Server (no collapse controls, math not yet
+  rendered), with each run of whitespace, including non-breaking spaces,
+  collapsed to one space. This key is used only to restore collapsed state
+  after a content update from the Server (rule 9); it is not a saved id.
 
 Rules
 -----
@@ -83,7 +85,10 @@ Rules
    blocks, and the content before the ending heading in its doc block. If
    there is no ending heading, it contains everything through the end of the
    file. Hiding part of a doc block leaves its other content visible. Code in
-   a collapsed section is hidden, not deleted.
+   a collapsed section is hidden, not deleted. The code and whole doc blocks
+   in a section are folded with CodeMirror's own folding, so they show as
+   CodeMirror's fold placeholder (…). Clicking the placeholder, or a CodeMirror
+   unfold command such as Unfold All, expands the section like ▸.
 6. **Never saved:** collapsing and expanding do not mark the document as edited
    or send document content. All content, including hidden content, is kept;
    collapse controls and state are absent from HTML sent to the Server, the
@@ -95,15 +100,20 @@ Rules
    visible edit, outgoing content and the saved file must match those with all
    sections shown. Toggling alone sends no document content; a cursor in visible
    text maps to the same text with sections collapsed or shown.
-7. **Navigation:** moving to hidden content from inside the Client opens every
-   collapsed section hiding it. This covers following a link or
-   cross-reference, and a search or go-to-line that selects hidden content.
-   The cursor and scroll position the IDE sends never open a section. When
-   either points into hidden content (a hidden line of code, or a doc block
-   hidden entirely), the Client scrolls to the heading of the outermost
-   collapsed section hiding it and leaves its own cursor where it was. A line
-   in a doc block that is only partly hidden points to that doc block, which
-   is visible.
+7. **Cursor in hidden content:** the cursor never stays in hidden content.
+   When it moves there, every collapsed section hiding it opens, as
+   CodeMirror's folding already does for code. This covers the cursor the IDE
+   sends, a search or go-to-line that selects hidden content (including
+   TinyMCE's search in Markdown documents), following a link or
+   cross-reference, and a Client edit or Server update that leaves the cursor
+   in a collapsed section, such as changing a heading's level so that a
+   collapsed section now holds the cursor. A line in a doc block that is only
+   partly hidden points to that doc block, which is visible, so it opens
+   nothing. A scroll position alone never opens a section.
+   Two of these cases need fixes in the Client first, and this spec assumes
+   they will be made: in Markdown documents the Client doesn't yet follow the
+   IDE's cursor (`scrollToLine` is a `TODO`), and same-file links don't yet
+   work in source files (their tests in `overall_5.rs` are ignored).
 8. **Edits:** before a Client edit that would change hidden content, expand
    every section needed to reveal the affected content, then apply the edit
    with the same result as if that content had been shown. This includes
@@ -130,8 +140,10 @@ Rules
    may still hide them. Thus an IDE rename or level change normally loses that
    heading's collapsed state.
    Occurrence matching is deterministic, but inserting or deleting an
-   identical heading may transfer the state to another occurrence; tracking
-   identity across such changes is out of scope. Opening another file, closing
+   identical heading may transfer the state to another occurrence, and a
+   heading whose text comes from a cross-reference gets a new key when its
+   target's text changes; tracking identity across such changes is out of
+   scope. Opening another file, closing
    and reopening this file, or reloading the Client starts with all sections
    expanded. An automatic full content update of the open file is not a reload.
 
@@ -144,8 +156,10 @@ Out of scope
   definition above.
 * Tracking heading identity across updates from the Server beyond the
   heading-key rule.
-* Folding code by its syntax, which CodeMirror already offers and which stays
-  as it is.
+* Changing CodeMirror's folding by syntax, which keeps working alongside the
+  folds that collapsed sections add.
+* Finding hidden text with the browser's own find; the Client's search covers
+  it (rule 7).
 
 Examples
 --------
@@ -173,7 +187,7 @@ the example is tested (see Tests below).
 | 10 | Same as 1 | Collapse A, edit p3, wait for autosave | Outgoing document HTML and the saved file equal those from the same edit with A shown; p1, B and p2 remain in the document | overall.rs |
 | 11 | `H1 A` with an existing id, followed by p1 | Collapse A, edit A's text, wait for autosave | A stays collapsed; the saved heading keeps its id and contains no collapse markup | overall.rs |
 | 12 | Same as 1, A collapsed | Place the Client cursor in C | The position sent to the IDE maps to C, as with A shown | overall.rs |
-| 13 | Same as 6, A collapsed | The IDE moves the cursor into `code1`, or only scrolls to it | A stays collapsed; the Client scrolls to A and its cursor stays where it was | Client |
+| 13 | Same as 6, A collapsed | The IDE moves the cursor into `code1` | A opens; the cursor is in `code1` | Client |
 | 14 | Same as 1, A and B collapsed; p3 links to an id in p2 | Follow the link in the Client | A and B open; the Client scrolls to p2 | Client |
 | 15 | Same as 1, A collapsed | Backspace at the start of C in the Client | A opens before C merges into p2; result equals the same edit with A shown | Client |
 | 16 | Same as 1, A collapsed | Select from the start of A to the start of C and type `X` | A opens before replacement; document content equals the same replacement with A shown | Client |
@@ -198,27 +212,38 @@ Implementation
   changes must not create document edits or undo entries; user edits retain
   the editor's normal undo behavior.
 * **Source files** ([CodeMirror-integration.mts](CodeMirror-integration.mts)):
-  account for sections spanning code and doc blocks and for boundaries inside
-  one doc block. A `StateField` can map code positions through Client edits,
-  but heading boundaries inside doc-block HTML also need tracking. Doc-block
-  widgets must reflect the fold state when created or updated, including when
-  an inactive block is moved into or out of TinyMCE. Hidden code must remain
-  in the underlying document, and fold decorations must coexist with doc-block
-  replacements and syntax folding without overlapping replacement ranges.
+  fold the code and whole doc blocks of a section with the folding in
+  `@codemirror/language`, which `basicSetup` already includes. `foldEffect`
+  and `unfoldEffect` add and remove a fold, and `foldState` maps it through
+  edits. `foldState` also clears a fold that a deletion touches or that the
+  selection head moves into (`clearTouchedFolds`), which gives rules 7 and 8
+  for code. A fold starts and ends at doc-block boundaries, so it never
+  partly overlaps a doc block's own `Decoration.replace` widget; the parts of
+  the first and last doc blocks that belong to the section are hidden inside
+  those blocks (rule 1). `DocBlockWidget.eq` must compare that state, so that
+  `toDOM` and `updateDOM` redraw the block, including when TinyMCE moves into
+  or out of it. See the CodeMirror
+  [folding reference](https://codemirror.net/docs/ref/#language.foldEffect).
 * **Updates from the Server:** Markdown content is reset with `setContent`; a
   full source update destroys and recreates the CodeMirror view, while a
   source diff uses transactions. Re-translations (`is_re_translation`) take
-  the same paths. Preserve and restore heading keys across each path (rule 9),
-  without inserting fold state into the content used as the next diff's base.
+  the same paths. A diff maps CodeMirror's folds through its changes; a full
+  update recreates the view and its `foldState`. Restore collapsed state by
+  heading key after each path (rule 9), without inserting fold state into the
+  content used as the next diff's base.
   Existing heading ids serve cross-references and must remain unchanged.
-* **Cursor, scroll and edits:** the IDE sends a line number with every
-  update; in Markdown documents the Client doesn't follow it yet
-  (`scrollToLine` is a `TODO`). After restoring fold state, replace a hidden
-  target with its outermost collapsed heading. In the
-  Client, `followLink`'s `scrollIntoView()` and CodeMirror's search and
-  go-to-line must open the sections hiding their target first. Reveal hidden
-  content before an edit affects it (rule 8), including edits crossing
-  doc-block boundaries.
+* **Cursor, scroll and edits:** in source files, setting CodeMirror's
+  selection to the IDE's cursor line opens the folds around it (rule 7).
+  TODO: apply rule 7 to the IDE's cursor in Markdown documents once the Client
+  follows it there (`scrollToLine` in [CodeChatEditor.mts](CodeChatEditor.mts)
+  is a `TODO`). TODO: once same-file links work in source files (the ignored
+  test in [overall_5.rs](../../server/tests/overall/overall_5.rs)), find a
+  link's target in the doc-block contents held in CodeMirror's state, since
+  `followLink`'s `document.querySelector` can't see folded content, and open
+  the sections hiding it. In Markdown documents, `followLink` and TinyMCE's
+  `searchreplace` must open the sections hiding their target, and its Replace
+  All is an edit (rule 8). Reveal hidden content before an edit affects it
+  (rule 8), including edits crossing doc-block boundaries.
 * **Tests:** every example has one test, in the layer given by its Test
   column. Client tests in [CodeChatEditor-test.mts](CodeChatEditor-test.mts)
   run only in `test.py?test` and cover the examples that need no Server:
