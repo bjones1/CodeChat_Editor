@@ -60,7 +60,7 @@ compile and run the project in the current git repo.` produced:
 
 #### Last specification review
 
-Prompting Copilot Chat in VS Code (Agent mode) with `Review round 6: only the
+Prompting Copilot Fusion, Standard, in VS Code with `Review round 6: only the
 staged changes to server/src/processing/cache-spec.md, the paragraph "Two
 sanitizers must preserve both new pieces of markup" at the end of the
 "Bidirectional cross-references" subsection. Check it against AMMONIA_OPTIONS
