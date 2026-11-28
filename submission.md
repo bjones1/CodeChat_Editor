@@ -40,6 +40,7 @@ no warnings in the code this project changed.
 | ----- | -------- | ----------------- |
 | 1 | 8 | "Every other rule applies" now excludes the layout rule and reads "block" for "code/doc block"; scope limited to Markdown documents, not doc blocks; option 2's Markdown argument made precise and hoisting cited; the heading's inclusion stated (O1, O4 and O5 were dropped when merging with teammates' work, since the "Rendering a fragment's content" and "Edge cases and errors" subsections, written in parallel, already cover them) |
 | 2 | 6 | "Every other rule" narrowed to the general section's "Details" list, so its default no longer contradicts the Markdown default; `following` described as counting the blocks after the first; option 2's hoisting argument corrected; "higher level" defined; gather-element advice points to the edge cases |
+| 3 | 3 | Lines rewrapped to 80 columns; option 4 starts at the block holding the tag, not at the tag; edits join a fragment automatically only without `following` |
 
 #### Last specification review
 
@@ -48,72 +49,43 @@ named "Fragments in Markdown documents" in server/src/processing/cache-spec.md
 which I wrote -- the introduction, the two rule bullets, "Details", and
 "Rationale" -- writing findings to review.md. Check each claim against the code
 and against the teammates' subsections. Do not edit cache-spec.md." This was
-round 2, run in the same Claude Code session which wrote the section and ran
-round 1.
+round 3, run in the same Claude Code session which wrote the section and ran
+rounds 1 and 2. Every finding was applied, and all three are minor, so the
+reviews stopped here.
 
-Findings which were not applied are struck through.
-
-> **Review of "Fragments in Markdown documents" in cache-spec.md (round 2)**
+> **Review of "Fragments in Markdown documents" in cache-spec.md (round 3)**
 >
 > This reviews the introduction, the rule bullets, "Details" and "Rationale" as
-> of dca693b, after round 1 and the merge with the teammates' "Rendering a
-> fragment's content", "Examples", "Edge cases and errors" and "Testing"
-> subsections. Claims were checked against `markdown_fragment_range`,
-> `hydrating_walk_node` and `hoist_fragment_content` in `processing.rs`, and
-> against those subsections and their tests.
+> of b50428c. Round 2 is applied fully: the inherited rules are limited to the
+> general "Details" list, `following` is described as counting the blocks after
+> the first, the hoisting argument is corrected, "higher level" is defined, and
+> the gather-element advice points to "Edge cases and errors". No claim checked
+> against `markdown_fragment_range` or the teammates' subsections is wrong.
 >
-> **Errors**
+> **F1. Formatting.** Round 2's edits left the default bullet with a 113-column
+> line and the option 2 paragraph with a short line and one over 80 columns.
+> Rewrap both.
 >
-> **E1. "Every other rule ... applies, reading 'block' for 'code/doc block'"
-> includes the general default.** The general section's first paragraph says a
-> fragment encloses "the current doc block and ... the following code/doc
-> block". Read with "block", that is the tag's block plus one more, which
-> contradicts this section's default of the rest of the section. Limit the
-> bullet to the rules in the general section's "Details" list. (Also: "except
-> that on reproducing" should read "except the rule on reproducing".)
+> **F2. Option 4 in the list of definitions starts "from the tag".** The
+> fragment starts with the top-level block holding the tag, so text before the
+> tag in that paragraph is enclosed (`Kept.` in the "Tag partway through a
+> section" example has the tag before it, but `Before <fragment id="f">after`
+> encloses `Before`). Say "from the block holding the tag".
 >
-> **E2. The rationale misstates what `following` counts.** "`following` counts
-> the blocks it encloses" is off by one: `following="3"` encloses the tag's
-> block and the next three, as the general section says and as
-> `doc_block_index.saturating_add(following)` computes. Say it counts the
-> blocks after the first.
->
-> **E3. Option 2's hoisting argument is wrong.** "Hoisting moves anything inside
-> a `<fragment>` to after it, so the text would not stay enclosed" -- but
-> hoisted text stays in the tag's block, so it stays in the fragment; "Edge
-> cases and errors" says so, and `_hoisted_content` tests it. The point is that
-> the tag could never mark where the enclosed text ends.
->
-> **Omissions**
->
-> **O1. "The same or a higher level" is ambiguous.** A reader may take "higher"
-> as the larger number. `markdown_fragment_range` stops at `level <=
-> section_level`, so `#` is higher than `##`. State this.
->
-> **O2. The advice for a gather element is incomplete.** "Give it a
-> `following` attribute which stops before the gather element" cannot work
-> when the gather element is in the tag's own top-level block, which "Edge
-> cases and errors" covers. Point there.
->
-> ~~**O3. The introduction's list of blocks omits raw HTML blocks and
-> comments.**~~ (Not applied: comments are not elements and so are not blocks,
-> which "Rendering a fragment's content" already says; "and so on" and "Edge
-> cases and errors" cover HTML containers such as `<div>`.)
+> **F3. "Paragraphs or subsections added to a section join the fragment
+> automatically" holds only without `following`.** With `following`, an
+> inserted block pushes the last one out, which the cost paragraph already
+> says. Qualify the sentence.
 >
 > **Verified as stated**
 >
-> * The scope paragraph: a fragment in a source file's doc block still encloses
->   code/doc blocks, even when the doc block holds headings (round 1's probe of
->   `// ## H` in `s.js`).
-> * The default and `following` bullets agree with the "Examples" table and
->   with `markdown_fragment_range`.
-> * The heading which holds the tag is the first block of the gathered content.
-> * Option 1 is a special case of option 4; option 3's paired-tag failure modes
->   don't arise, since `<fragment>` remains a single empty element.
-> * The tag still round-trips through hoisting, dehydration and the
->   HTML-to-Markdown conversion on save (`test_hydrate_fragment_in_markdown`).
+> * Every rule bullet agrees with the "Examples" table and the tests named in
+>   "Testing".
+> * The rationale's claims about hydration (`contenteditable=false`, backlinks),
+>   hoisting, and the HTML block a lone `<fragment id="x">` line starts.
+> * The cost paragraph's two trade-offs.
 >
-> Summary: 6 findings (3 errors, 3 omissions); 5 applied, 1 not applied.
+> Summary: 3 findings, all minor; 3 applied.
 
 ### Nurlybek Orynbassar
 
