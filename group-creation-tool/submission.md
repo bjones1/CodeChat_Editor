@@ -373,9 +373,9 @@ hidden, and the out-of-scope list is concrete.
 
 ### Ademi Bakhytova
 
-Github user id:
+Github user id: adeemss
 
-Git user id:
+Git user id: adeemss
 
 #### Contributions
 
@@ -391,9 +391,110 @@ is not directly related to the project, and only used for pull request tracking.
 
 | Round | Findings | Main Changes Made |
 | --- | --- | --- |
-
+| 7 | Rated 9/10; 14 findings in total, several of them Low findings carried over from earlier rounds. **Medium:** exact `BigInt` fractions put the 60-second limit at risk (a pass over ~125,000 swaps, each changing ~46 students' satisfaction, with denominators of hundreds of bits), the forming-time limit names no *k* or preference density (*k* = 250 is far costlier than the default), Rename has no collision or validity rules, "letter" in the CSV file name is undefined for Cyrillic or Kazakh titles, lists pasted from Outlook or Teams (`Name <a@uni.edu>; …`) are mostly dropped, "last change" for automatic deletion is undefined in the spec. **Low:** the dead "fewer than *k* students in all" clause, loose userid syntax (`a@.edu`, `a@b.`) and no warning for other organizations' domains, rounding of halves in option fields, both weights at 0 leave the groups to the tie-break, "until the organizer changes it" for typing the default value, WCAG 2.1 instead of 2.2, the 2-second page limit vs. a cold-started `signIn` function, no way for a student to withdraw saved preferences. Expected results table, teammate-part table and group-size examples (50, 500, 13 and 7 students) verified correct by hand, each with one best assignment. | |
 
 #### Last specification review
+
+LLM: Claude Opus 5.5 (`claude-opus-5-5`), in Claude Code.
+
+Prompt:
+
+> review specification at @specification.md
+
+Output (line numbers refer to [specification.md](specification.md) and
+[architecture.md](architecture.md) as they were reviewed, before this round's
+changes):
+
+I reviewed `group-creation-tool/specification.md` and checked it against
+`architecture.md`. It's in good shape. I recomputed every row of Expected
+results, every row of the teammate-part table, and the group-size examples (50,
+500, 13 and 7 students) by hand. All the stated groups and scores are correct,
+and each listed best assignment is the only one with that score. Nothing I
+found is a contradiction; the points below are gaps, ambiguities and one
+feasibility risk.
+
+##### Worth fixing
+
+1. **Forming time vs. exact fractions** (spec lines 300–304 and 465–468). This
+   is the biggest risk. Each student's share has its own denominator, up to
+   about 250,000. Adding them up over 500 students makes the common
+   denominator very large, often hundreds of bits. Each swap changes the
+   satisfaction of about 46 students. A full pass over about 125,000 swap
+   pairs using `BigInt` fractions could take tens of seconds, and the search
+   needs many passes. `architecture.md` already lists this as an open decision
+   (lines 375–378). Its fallback (compare with floating point first, and use
+   exact fractions only for close calls) keeps the spec's wording valid, so
+   build a 500×100 prototype before treating the 60-second target as met.
+2. **The forming-time requirement doesn't say which inputs it covers** (lines
+   465–468). It only says "500 students and 100 projects". Run time depends
+   heavily on *k* and on how much students rank. *k* = 250 gives two groups of
+   250, so *m* = 249 and every move costs far more than with the default *k* =
+   22. Students ranking all 499 classmates is also worse than sparse
+   preferences. Name the case: say whether it means any *k*, and every student
+   ranking every item.
+3. **Rename has no collision rules** (lines 108–115). It doesn't say what
+   happens when a project or userid is renamed to one already on the list,
+   ignoring case. It also doesn't say whether the userid rule and the
+   200-character limit still apply. Setup drops duplicates, but Rename has no
+   rule. Suggest: "Rename applies the same rules as setup and is refused when
+   it would produce a duplicate or invalid entry."
+4. **"Letter" in the CSV file name is undefined** (lines 388–390). It's unclear
+   whether it means ASCII letters or Unicode letters. A Cyrillic or Kazakh
+   title like `Топтар` would give either `Топтар-groups.csv` or
+   `______-groups.csv`. Lengths are counted in Unicode code points elsewhere,
+   so pick one explicitly.
+5. **Pasting the student list** (lines 62 and 70–71). Lists copied from Outlook
+   or Teams look like `Name <a@uni.edu>; Name2 <b@uni.edu>`. Under the current
+   rules that gives a pile of dropped entries. Consider allowing `;` as a
+   separator and taking the address from `<…>`. Otherwise, add this format to
+   Out of scope so it's a deliberate choice.
+6. **"Last change" for automatic deletion is undefined** (lines 36 and 55). The
+   sessions list shows a deletion date, so users need to know what resets it.
+   `architecture.md` decides this (lines 182–184: any organizer action, or a
+   student save), but the spec should say it, including whether a student
+   signing in without saving counts.
+
+##### Minor
+
+7. **A dead clause in Group sizes** (lines 239–240). "Unless there are fewer
+   than *k* students in all" can never apply, because *k* is limited to 1–*S*.
+   The sentence is also hard to parse. Suggest: "So every group has at least
+   *k* and fewer than 2*k* students."
+8. **The userid check is loose** (lines 70–71). `a@.edu` and `a@b.` both pass
+   ("a domain that contains at least one `.`"). Also, an entry with another
+   organization's domain is accepted but can never sign in. A warning for
+   entries outside the organization's domain would catch typos early.
+9. **Rounding halves in the options fields** (lines 324–327) isn't specified
+   ("a fraction is rounded to the nearest whole number"). Say which way 2.5
+   goes, as Group sizes already does.
+10. **Both weights set to 0** (lines 321–322) makes every assignment score 0,
+    so the groups come only from the tie-break. A short help-text warning
+    would avoid confusion.
+11. **"Until the organizer changes it"** (lines 230–234, default *k*) doesn't
+    say what happens if the organizer types the current default value: does
+    *k* still follow the list afterwards? `architecture.md` uses `null` for
+    "still the default" (line 230), so define a reset, such as clearing the
+    field.
+12. **Accessibility** (lines 484–487): consider WCAG 2.2 AA instead of 2.1. It
+    adds 2.5.7 (dragging movements), which the button and key moves already
+    meet, and 2.5.8 (target size).
+13. **Speed vs. sign-in** (lines 489–490): the 2-second page requirement
+    probably doesn't hold on a cold start of the `signIn` Cloud Function.
+    Either exclude sign-in from the requirement or plan for keeping one
+    instance warm.
+14. **A student can't withdraw their preferences** (lines 189 and 204–210)
+    after saving; they can only move everything back to Unspecified, and the
+    status stays *saved preferences*. That may be fine, but state it given the
+    Privacy section.
+
+##### Checked and fine
+
+* The privacy model, and the inference it openly accepts from the groups.
+* The three save-refusal cases.
+* Forming being blocked while edits are possible, and vice versa.
+* The CSV example: numbering and quoting are correct.
+* The Rename vs. remove-and-add behavior.
+* Results being marked out of date when options change.
 
 ### Alisher Akim
 
@@ -787,9 +888,9 @@ is not directly related to the project, and only used for pull request tracking.
 
 ### Ademi Bakhytova
 
-Github user id:
+Github user id: adeemss
 
-Git user id:
+Git user id: adeemss
 
 #### Contributions
 
@@ -803,6 +904,113 @@ is not directly related to the project, and only used for pull request tracking.
 
 #### Specification review rounds
 
+| Round | Findings | Main Changes Made |
+| --- | --- | --- |
+| 7 | Rated 9/10; 14 findings in total, several of them Low findings carried over from earlier rounds. **Medium:** exact `BigInt` fractions put the 60-second limit at risk (a pass over ~125,000 swaps, each changing ~46 students' satisfaction, with denominators of hundreds of bits), the forming-time limit names no *k* or preference density (*k* = 250 is far costlier than the default), Rename has no collision or validity rules, "letter" in the CSV file name is undefined for Cyrillic or Kazakh titles, lists pasted from Outlook or Teams (`Name <a@uni.edu>; …`) are mostly dropped, "last change" for automatic deletion is undefined in the spec. **Low:** the dead "fewer than *k* students in all" clause, loose userid syntax (`a@.edu`, `a@b.`) and no warning for other organizations' domains, rounding of halves in option fields, both weights at 0 leave the groups to the tie-break, "until the organizer changes it" for typing the default value, WCAG 2.1 instead of 2.2, the 2-second page limit vs. a cold-started `signIn` function, no way for a student to withdraw saved preferences. Expected results table, teammate-part table and group-size examples (50, 500, 13 and 7 students) verified correct by hand, each with one best assignment. | |
+
+#### Last specification review
+
+LLM: Claude Opus 5.5 (`claude-opus-5-5`), in Claude Code.
+
+Prompt:
+
+> review specification at @specification.md
+
+Output (line numbers refer to [specification.md](specification.md) and
+[architecture.md](architecture.md) as they were reviewed, before this round's
+changes):
+
+I reviewed `group-creation-tool/specification.md` and checked it against
+`architecture.md`. It's in good shape. I recomputed every row of Expected
+results, every row of the teammate-part table, and the group-size examples (50,
+500, 13 and 7 students) by hand. All the stated groups and scores are correct,
+and each listed best assignment is the only one with that score. Nothing I
+found is a contradiction; the points below are gaps, ambiguities and one
+feasibility risk.
+
+##### Worth fixing
+
+1. **Forming time vs. exact fractions** (spec lines 300–304 and 465–468). This
+   is the biggest risk. Each student's share has its own denominator, up to
+   about 250,000. Adding them up over 500 students makes the common
+   denominator very large, often hundreds of bits. Each swap changes the
+   satisfaction of about 46 students. A full pass over about 125,000 swap
+   pairs using `BigInt` fractions could take tens of seconds, and the search
+   needs many passes. `architecture.md` already lists this as an open decision
+   (lines 375–378). Its fallback (compare with floating point first, and use
+   exact fractions only for close calls) keeps the spec's wording valid, so
+   build a 500×100 prototype before treating the 60-second target as met.
+2. **The forming-time requirement doesn't say which inputs it covers** (lines
+   465–468). It only says "500 students and 100 projects". Run time depends
+   heavily on *k* and on how much students rank. *k* = 250 gives two groups of
+   250, so *m* = 249 and every move costs far more than with the default *k* =
+   22. Students ranking all 499 classmates is also worse than sparse
+   preferences. Name the case: say whether it means any *k*, and every student
+   ranking every item.
+3. **Rename has no collision rules** (lines 108–115). It doesn't say what
+   happens when a project or userid is renamed to one already on the list,
+   ignoring case. It also doesn't say whether the userid rule and the
+   200-character limit still apply. Setup drops duplicates, but Rename has no
+   rule. Suggest: "Rename applies the same rules as setup and is refused when
+   it would produce a duplicate or invalid entry."
+4. **"Letter" in the CSV file name is undefined** (lines 388–390). It's unclear
+   whether it means ASCII letters or Unicode letters. A Cyrillic or Kazakh
+   title like `Топтар` would give either `Топтар-groups.csv` or
+   `______-groups.csv`. Lengths are counted in Unicode code points elsewhere,
+   so pick one explicitly.
+5. **Pasting the student list** (lines 62 and 70–71). Lists copied from Outlook
+   or Teams look like `Name <a@uni.edu>; Name2 <b@uni.edu>`. Under the current
+   rules that gives a pile of dropped entries. Consider allowing `;` as a
+   separator and taking the address from `<…>`. Otherwise, add this format to
+   Out of scope so it's a deliberate choice.
+6. **"Last change" for automatic deletion is undefined** (lines 36 and 55). The
+   sessions list shows a deletion date, so users need to know what resets it.
+   `architecture.md` decides this (lines 182–184: any organizer action, or a
+   student save), but the spec should say it, including whether a student
+   signing in without saving counts.
+
+##### Minor
+
+7. **A dead clause in Group sizes** (lines 239–240). "Unless there are fewer
+   than *k* students in all" can never apply, because *k* is limited to 1–*S*.
+   The sentence is also hard to parse. Suggest: "So every group has at least
+   *k* and fewer than 2*k* students."
+8. **The userid check is loose** (lines 70–71). `a@.edu` and `a@b.` both pass
+   ("a domain that contains at least one `.`"). Also, an entry with another
+   organization's domain is accepted but can never sign in. A warning for
+   entries outside the organization's domain would catch typos early.
+9. **Rounding halves in the options fields** (lines 324–327) isn't specified
+   ("a fraction is rounded to the nearest whole number"). Say which way 2.5
+   goes, as Group sizes already does.
+10. **Both weights set to 0** (lines 321–322) makes every assignment score 0,
+    so the groups come only from the tie-break. A short help-text warning
+    would avoid confusion.
+11. **"Until the organizer changes it"** (lines 230–234, default *k*) doesn't
+    say what happens if the organizer types the current default value: does
+    *k* still follow the list afterwards? `architecture.md` uses `null` for
+    "still the default" (line 230), so define a reset, such as clearing the
+    field.
+12. **Accessibility** (lines 484–487): consider WCAG 2.2 AA instead of 2.1. It
+    adds 2.5.7 (dragging movements), which the button and key moves already
+    meet, and 2.5.8 (target size).
+13. **Speed vs. sign-in** (lines 489–490): the 2-second page requirement
+    probably doesn't hold on a cold start of the `signIn` Cloud Function.
+    Either exclude sign-in from the requirement or plan for keeping one
+    instance warm.
+14. **A student can't withdraw their preferences** (lines 189 and 204–210)
+    after saving; they can only move everything back to Unspecified, and the
+    status stays *saved preferences*. That may be fine, but state it given the
+    Privacy section.
+
+##### Checked and fine
+
+* The privacy model, and the inference it openly accepts from the groups.
+* The three save-refusal cases.
+* Forming being blocked while edits are possible, and vice versa.
+* The CSV example: numbering and quoting are correct.
+* The Rename vs. remove-and-add behavior.
+* Results being marked out of date when options change.
+
 #### Implementation review rounds
 
 Implementation rounds are not included, as current project stage only required the
@@ -814,12 +1022,6 @@ is not directly related to the project, and only used for pull request tracking.
 Implementation rounds are not included, as current project stage only required the
 specification (as of Nov. 28, 2026). Also, current repository (CodeChat Editor)
 is not directly related to the project, and only used for pull request tracking.
-
-| Round | Findings | Main Changes Made |
-| --- | --- | --- |
-
-
-#### Last specification review
 
 ### Alisher Akim
 
