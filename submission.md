@@ -21,20 +21,21 @@ wrote this file and the pull request.
 
 #### Build and run test
 
-Claude Opus 5.5 (Claude Code), prompted with "Verify that you can build and
-run the project in the current git repo.", reported that the project builds
-and runs, but not through `./bt build`:
+Prompting Claude Opus 5.5, high effort (Claude Code 2.1.330), started in the
+repo root at 8d47bd5, with "Verify that you can build and run the project in
+the current git repo." reported that the project builds and runs:
 
-* The Rust workspace built with `cargo +1.98.0 build --workspace`, the
-  `export_bindings` tests passed (13 of 13), the Client's esbuild bundles
-  built, and `tsc -noEmit` reported no errors.
-* The standalone server started with
-  `cargo run -p codechat-editor-standalone -- --port 8765 serve` and served
-  `/` and `toc.md` with status 200.
-* `./bt build` stopped because my default Rust toolchain was broken (since
-  fixed with `rustup toolchain install stable --force`) and `cargo-nextest`
-  wasn't installed. It didn't run `./bt install`, because that installs tools
-  globally and pipes a script from the internet into bash.
+* **Build:** `./bt build` finished without errors (cargo and rustc 1.100.0,
+  node 25.9.0, pnpm 12.21.0). It built the Server, the Client, the TypeScript
+  bindings (13 of 13 binding-export tests passed) and the VSCode extension
+  (esbuild bundle and a clean `tsc -noEmit`).
+* **Run:** it started the standalone Server with
+  `cargo run --bin codechat-editor-standalone -- --port 18080 serve`.
+  `GET /ping` returned 200, and requesting the project's `toc.md` returned 200
+  with the rendered HTML. It then stopped the Server.
+* It didn't run `./bt test`, whose browser integration tests are slow. It
+  noted one compiler warning (`server/src/webserver.rs:2023`) and that the
+  build leaves an untracked native module in `extensions/VSCode/src/`.
 
 #### Specification review rounds
 
