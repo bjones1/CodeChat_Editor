@@ -215,6 +215,32 @@ independently of its `ref`, and the backlink exists only when both are valid:
   <xref ref="cc-2dkkF9YJnL"></xref>). It therefore defines no id and produces no
   backlink.
 
+Two sanitizers must preserve both new pieces of markup, since each removes the
+attributes and classes it doesn't allow:
+
+* The Server sanitizes all hydrated HTML before sending it to the Client
+  (`minify` in `processing.rs`). It already allows `id` on every element, but
+  allows classes only per element, so it must allow `cc-backlinks` (see below),
+  plus `contenteditable` on each element the backlink markup uses.
+* In the Client, the `<xref>` entry in `extended_valid_elements` in
+  `tinymce-config.mts` must allow `id` in addition to `contenteditable` and
+  `ref`; otherwise TinyMCE strips the `id`, and the next save turns the
+  bidirectional cross-reference into a one-way one. A bidirectional
+  cross-reference is still an inline element, so `custom_elements` keeps
+  `~xref` unchanged.
+* The backlink markup uses only standard HTML elements, marked by a class and
+  `contenteditable="false"`, as the gather list does, so TinyMCE's default
+  schema keeps it and no new custom element is needed.
+
+Dehydration recognizes the backlink markup by its reserved class,
+`cc-backlinks`, and removes each element carrying it, together with its
+contents, wherever it appears, as it removes a gather list; this also discards a
+copy the user pasted elsewhere. Matching by class rather than by position keeps
+dehydration independent of where the markup is placed. The `<xref>` itself
+dehydrates exactly as a one-way cross-reference, except that its `id` is kept:
+`contenteditable` and `data-content` are removed and the optional content is
+restored from `data-content`.
+
 <h3
   data-gather="cc-49851a1jdJ cc-BHC6fJQ8bU cc-MwcxCRjY8b cc-FqIILGgnfo"
   id="cc-oRzUk5hMXK"

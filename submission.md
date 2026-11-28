@@ -20,8 +20,9 @@ GitHub userid: SokolovVD-IT
 
 The core approach (the "Bidirectional cross-references" subsection of
 Cross-references), the attribute rule allowing `id` on an `<xref>`, `id="*"`
-for an `<xref>`, and the error rules for an invalid, duplicate, or nested
-`id` and for `ref` errors. TODO (Viacheslav): TinyMCE and dehydration.
+for an `<xref>`, the error rules for an invalid, duplicate, or nested `id` and
+for `ref` errors, what the Server's sanitizer and TinyMCE must allow, and the
+dehydration of the backlink markup and of the `<xref>`.
 
 #### Build and run test
 
@@ -53,52 +54,34 @@ compile and run the project in the current git repo.` produced:
 | 2 | 5 (2 deferred to later sections, 3 rejected) | No changes; the findings concerned implementation details or sections not yet written. |
 | 3 | 5 (2 accepted into the error rules, 3 rejected) | Syntax: allowed `id` on `<xref>`, kept by hydration and dehydration; `id="*"` works on an `<xref>`. The accepted findings became the rules for an empty `id` and for `id` versus `ref` errors. |
 | 4 | 5 (2 accepted as one change, 3 rejected) | Error rules: an `<xref>` with an `id` nested in another `<xref>`'s optional content defines no id and produces no backlink. |
+| 5 | 3 (1 accepted, 2 rejected) | TinyMCE and dehydration: the Server's sanitizer of hydrated HTML (`minify`) must also allow the `cc-backlinks` class and `contenteditable` on the backlink markup. |
+| 6 | 2 (1 deferred to a later section, 1 rejected) | No changes; which elements carry `cc-backlinks` is decided with the backlink markup. |
 
 #### Last specification review
 
-Prompting Copilot Chat in VS Code (Agent mode) with `Review only the staged
-changes to server/src/processing/cache-spec.md: the error rules added at the
-end of the "Bidirectional cross-references" subsection (invalid id, duplicate
-id, ref errors, both). Check them against the Details list under
-Cross-references, the CSS-identifier rule under "Fragments and gather
-elements", "Missing and duplicate ids", and the rest of the "Bidirectional
-cross-references" subsection for contradictions, undefined terms, and missing
-cases. Ignore TinyMCE, dehydration, backlink text and markup, and the
-reverse-edge diff: later sections cover those. Do not edit files. List
-numbered findings.` produced the following output; strikethrough indicates
-LLM output that I deemed incorrect or irrelevant.
+Prompting Copilot Chat in VS Code (Agent mode) with `Review round 6: only the
+staged changes to server/src/processing/cache-spec.md, the paragraph "Two
+sanitizers must preserve both new pieces of markup" at the end of the
+"Bidirectional cross-references" subsection. Check it against AMMONIA_OPTIONS
+and minify in server/src/processing.rs and against extended_valid_elements in
+client/src/tinymce-config.mts. Do not edit files. List numbered findings, or
+say that there are none.` produced the following output; strikethrough
+indicates LLM output that I deemed incorrect or irrelevant.
 
-> 1. ~~**Invalid `id` can be caught by the generic CSS rule, but the spec does
->    not say it also blocks duplicate detection.** "Invalid ids define no id"
->    is consistent with the CSS rule, but repeated invalid strings should be
->    clarified as only one invalid-id error, not a missing/duplicate entry.~~
->    (Already stated: an invalid `id` defines no id, so it can't be a
->    duplicate.)
-> 2. **The HTML-cleaning rule can remove a nested `<xref>` definition.**
->    Cleaning says nested `<xref>` elements are unwrapped and their `id`
->    attributes stripped. It is unclear whether a nested bidirectional `<xref>`
->    counts as a definition or is explicitly excluded; the identity rule does
->    not reserve top-level-only syntax.
-> 3. ~~**Duplicate and `ref` errors may need independent error precedence.**
->    The spec says both errors must report both, but duplicate `id` already
->    says its `<xref>` renders a duplicate-id error and no backlink. It does
->    not define a required combined format or whether a
->    missing/fragment/duplicate `ref` replaces or supplements that message.~~
->    (The message format is an implementation detail; "reports both" says it
->    supplements.)
-> 4. ~~**The Missing-id section does not cover a missing `id` attribute versus
->    `id=""`.** `<xref>` without `id` is one-way, while `id=""` is
->    bidirectional and invalid. The distinction is stated, but "Missing and
->    duplicate ids" should explicitly define that an absent attribute is the
->    one-way marker and an empty present attribute is invalid rather than
->    missing.~~ (As the finding notes, the distinction is already stated;
->    repeating it would break DRY.)
-> 5. **The CSS rule for fragments, targets, and gathers uses a blanket "all
->    ids," creating an unclear scope.** It does not distinguish a
->    target/fragment id, a bidirectional xref anchor, and an id inside cleaned
->    optional content. The bidirectional section should state that only its
->    valid anchor participates in `IdEntry`; cleaned nested ids remain
->    excluded.
+> 1. ~~**The TinyMCE rule omits `data-content`.** The existing `<xref>` rule
+>    requires `data-content` to survive editing, but `extended_valid_elements`
+>    must allow `data-content` in addition to `id`, `contenteditable`, and
+>    `ref`. As written, the paragraph only adds `id` and could leave optional
+>    content stripped.~~ (TinyMCE already keeps `data-content`: the browser
+>    test `test_xref_optional_content_round_trip` passes with the current
+>    schema.)
+> 2. **The Server allowlist does not yet preserve `cc-backlinks`.**
+>    `AMMONIA_OPTIONS` has no allowed `cc-backlinks` class, and `minify` uses
+>    that configuration. The paragraph correctly says this class must be added,
+>    but it does not specify on which elements; this leaves the required
+>    implementation incomplete until the markup's element/class pairing is
+>    defined. (Deferred: the elements are chosen in the backlink markup
+>    section.)
 
 ### Pavel Shegay
 
