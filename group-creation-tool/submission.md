@@ -379,7 +379,7 @@ Git user id: adeemss
 
 #### Contributions
 
-
+Participated in review rounds and architecture.
 
 #### Build and run test
 
@@ -894,7 +894,7 @@ Git user id: adeemss
 
 #### Contributions
 
-
+Participated in review rounds and architecture.
 
 #### Build and run test
 
