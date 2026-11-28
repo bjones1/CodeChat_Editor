@@ -650,7 +650,7 @@ test requirements.
 
 One minor ambiguity found:
 
-* **[P3] “No attributes” needs clarification** — `spec.md:251`. Adding `l-n`
+* <s>**[P3] “No attributes” needs clarification**</s> — `spec.md:251`. Adding `l-n`
   to `add_tags` still permits generic attributes. The existing configuration
   allows `id` and `data-gather`; Ammonia also defaults to allowing `lang` and
   `title`. If all attributes must be stripped, specify an attribute filter for
@@ -678,7 +678,7 @@ TinyMCE configuration, CSS and caret placement, and associated regression tests.
 The Consumers subsection is explicitly informative and was not treated as an
 implementation requirement.
 
-1. **~~~[P3] Count lone CR when locating warnings inside HTML events.~~~**
+1. <s>**[P3] Count lone CR when locating warnings inside HTML events.**</s>
    `escape_hand_written_tags` (`server/src/processing.rs:1901`) computes a
    match's line by counting only `\n` in the event prefix; `scan_raw_text`
    (`:1968`) uses the same calculation for an opener. The spec explicitly
@@ -694,7 +694,7 @@ implementation requirement.
    line numbers for mixed endings; its current assertions check warning counts
    and the word `reserved`, so they miss this bug.
 
-2. **~~~[P3] Add the required save regression for hand-written tags.~~~**
+2. <s>**[P3] Add the required save regression for hand-written tags.**</s>
    The specification requires escaped hand-written tags to survive save
    (`line-number-tags-spec.md:411-415`). `test_line_number_tags_hand_written`
    (`server/src/processing/tests.rs:3951-3972`) checks only forward translation,
