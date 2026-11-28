@@ -221,6 +221,104 @@ things</h3>`:
   Implementation of Fragments and gather elements
 </h3>
 
+Inline inclusion of fragments
+-----------------------------
+
+A gather element lists fragment content in a separate block, laid out like the
+source it came from. An inline inclusion instead inserts the *text* of a
+fragment into the surrounding content, where it takes on the formatting of its
+context: included in a heading, the fragment's text becomes part of that
+heading; included in a list item, part of that item. The syntax is `<include
+ref="id"></include>`, where `ref` is the `id` of a `Fragment` (the name is
+provisional; see the open questions). The element allows no attribute except
+`ref` (all others are silently stripped) and no content: as for `<fragment>`,
+content placed inside it is moved after its closing tag.
+
+An example: the source of a fragment in another file is the doc block `<h4>Install the
+<em>tools</em></h4>`. After cache hydration, `<h3 id="t">Setup: <include
+ref="id1"></include></h3>` becomes:
+
+```html
+<h3 id="t">Setup: <span class="cc-include" contenteditable="false">Install the <em>tools</em></span></h3>
+```
+
+The `<h4>` wrapper is dropped, since the host is already a heading; the `<em>`
+stays.
+
+### Choosing the included content
+
+The included content is built from the doc blocks of the fragment's content,
+never from its layout wrappers (`cc-fragment-*`, line numbers, indents). The
+*host* is the nearest block-level ancestor of the `<include>`: a heading, `p`,
+`li`, `td`, `blockquote`, and so on.
+
+1. **The `<include>` shares its host with other content** (the usual case: it
+   sits inside a heading, paragraph, or list item beside text). The content is
+   flattened to inline content:
+   * Block wrappers (`p`, `h1`-`h6`, `div`, `blockquote`) are unwrapped and
+     their children kept, so the host's formatting applies, not the source's.
+     Heading levels in the source are discarded: an `<h1>` included in an
+     `<h4>` is `<h4>` text.
+   * Inline formatting (`em`, `strong`, `code`, `a`, math) is kept.
+   * Where unwrapping leaves two blocks adjacent, a single space is inserted
+     between them; `<br>` is kept.
+   * Lists and tables are replaced by their text content, in document order,
+     separated by single spaces.
+   * Code blocks of the fragment are omitted, since they aren't doc content. A
+     fragment with no doc content produces an error message.
+2. **The `<include>` is the only content of its doc block**, so it has no host
+   but the doc block itself: the fragment's doc content is inserted unchanged,
+   keeping its headings, lists, and so on, in a `<div class="cc-include">`.
+   Heading levels are not rewritten.
+
+Hydration wraps the result in `<span class="cc-include" contenteditable="false">`
+(case 1) or `<div class="cc-include" contenteditable="false">` (case 2). The
+dehydration routes remove this, leaving only `<include ref="id"></include>`.
+
+### Errors
+
+Each of these replaces the content of the `<include>` with an error message,
+shown wherever the include is; it never aborts hydration of the rest of the
+file:
+
+* `ref` is missing, or isn't a valid CSS identifier.
+* `ref` is not found, is defined more than once, or names a target or gather
+  element rather than a fragment.
+* The fragment's own content is an error message (for example, it contains a
+  gather element); that message is shown unchanged.
+* The fragment contains no doc content (case 1 above).
+
+### Dependencies
+
+An include is a reference like a cross-reference: its file is added to the
+`IdEntry::dependents` of `ref`, including while the id is `Missing`. A change to
+the fragment's content, or to the id's `IdState`, outdates the file by the
+existing rules, so no new outdating rule is needed.
+
+In terms of the layers under <xref ref="cc-P-g5o100jN">cache design</xref>:
+
+* Include hydration depends on layers 1 and 3 only, and is a new layer 6 which
+  nothing depends on.
+* An `<include>` inside a fragment is removed, along with its contents, when
+  `Fragment::content` is cleaned, as a `<fragment>` is. Were it kept, fragment
+  A including fragment B, which includes A, would outdate each other forever;
+  with the removal, a change still travels at most two steps. The cost is that a
+  gather element doesn't show what a listed fragment includes.
+* Likewise, `Target::inner_html` removes includes, since a cross-reference
+  renders it inside an `<a>`: an `<xref>` to a heading containing an include
+  shows the heading without the included text.
+* Including a fragment from the same file needs no special case.
+
+### Open questions
+
+* Whether to reuse `<fragment>` itself instead of a new element. That would
+  conflict with the rules that a `<fragment>` requires an `id`, allows no
+  content, and hydrates to backlinks.
+* Whether a block-level include should rewrite heading levels to fit the
+  section it's in.
+* Whether included content links back to its source, as a gather list does.
+* Whether `<include>` is allowed in Markdown documents, where fragments aren't.
+
 Search (future work)
 --------------------
 
