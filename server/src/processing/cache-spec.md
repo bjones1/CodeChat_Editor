@@ -161,14 +161,19 @@ The core rules are:
   `<xref>` depend on that of another.
 * **Backlink data.** For each bidirectional cross-reference, the cache records
   its containing file, `id`, `ref`, and *backlink text*, the content of the
-  backlink's link, defined below. Like `Target::inner_html`, each of these is
-  computed from the source of the `<xref>`'s file before hydration, so it
-  depends on nothing else in the cache; in particular, the backlink text never
-  includes the target's inner HTML.
+  backlink's link. Like `Target::inner_html`, each of these is computed from
+  the source of the `<xref>`'s file before hydration, so it depends on nothing
+  else in the cache; in particular, the backlink text never includes the
+  target's inner HTML. TODO (Pavel): define how the backlink text is computed;
+  replace this note with a cross-reference to that definition once it exists.
 * **Rendering.** Hydration adds to each target one backlink per bidirectional
   cross-reference which names it, ordered by containing file and then by `id`,
   as fragment backlinks are. This markup is marked `contenteditable="false"`,
   exists only in the Client, and is removed by dehydration, like a gather list.
+  TODO (Pavel): specify where the markup goes for an inline target, a block
+  target, and a gather element, and which elements carry the `cc-backlinks`
+  class; replace this note with a cross-reference to that subsection once it
+  exists.
 * **Coherence.** Backlinks are excluded from `Target::inner_html`,
   `Fragment::content`, and the optional content of any `<xref>`, just as
   fragment backlinks are excluded from `Fragment::content`. Were they included,

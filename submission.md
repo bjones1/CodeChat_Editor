@@ -3,7 +3,8 @@ Project 2 submission
 
 Team name: Enhanced cross-references 2
 
-Team: Pavel Shegay, Viacheslav Sokolov, Arsen Zhanserkenov, Arsen Sailau.
+Team: Pavel Shegay, Viacheslav Sokolov, Arsen Zhanserkenov. Arsen Sailau did
+not take part in this submission.
 
 The specification is the new and changed sections of
 [cache-spec.md](server/src/processing/cache-spec.md) which let an `<xref>`
@@ -50,7 +51,7 @@ compile and run the project in the current git repo.` produced:
 
 | Round | Findings | Main changes made |
 | ----- | -------- | ----------------- |
-| 1 | 10 (3 accepted, 4 deferred to later sections, 3 rejected) | Core approach: the `<xref>`'s `id` counts as a definition for `IdState`, a reference to it renders an error, "backlink text" is defined and never includes the target's inner HTML, and a `ref` change outdates both target files. |
+| 1 | 10 (3 accepted, 4 deferred to later sections, 3 rejected) | Core approach: the `<xref>`'s `id` counts as a definition for `IdState`, a reference to it renders an error, the term "backlink text" is introduced with the constraint that it never includes the target's inner HTML (its full definition is left to the backlink markup section), and a `ref` change outdates both target files. |
 | 2 | 5 (2 deferred to later sections, 3 rejected) | No changes; the findings concerned implementation details or sections not yet written. |
 | 3 | 5 (2 accepted into the error rules, 3 rejected) | Syntax: allowed `id` on `<xref>`, kept by hydration and dehydration; `id="*"` works on an `<xref>`. The accepted findings became the rules for an empty `id` and for `id` versus `ref` errors. |
 | 4 | 5 (2 accepted as one change, 3 rejected) | Error rules: an `<xref>` with an `id` nested in another `<xref>`'s optional content defines no id and produces no backlink. |
