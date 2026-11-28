@@ -23,6 +23,7 @@
 //
 // ### Standard library
 use std::{
+    collections::HashMap,
     io,
     path::{Path, PathBuf},
     rc::Rc,
@@ -2894,25 +2895,6 @@ fn test_duplicate_fragment_in_one_file() {
     assert!(content.contains("First.") && !content.contains("Second."));
 }
 
-// Verify that a fragment in a Markdown document is an error.
-#[test]
-fn test_hydrate_fragment_in_markdown() {
-    assert_eq!(
-        source_to_codechat_for_web(
-            "<fragment id=\"f\"></fragment>",
-            Path::new("foo.md"),
-            0.0,
-            false,
-            None
-        ),
-        Ok(build_codechat_for_web(
-            MARKDOWN_MODE,
-            "<p><fragment contenteditable=false id=f><span class=cc-error>fragments are not allowed in Markdown documents</span></fragment>",
-            vec![]
-        ))
-    );
-}
-
 // Verify that a fragment without an id -- whether its `id` attribute is missing
 // or empty -- hydrates to an error message requesting the id. Dehydration
 // removes the message, so saving the hydrated result writes back a bare
@@ -3254,6 +3236,599 @@ fn test_dehydrate_html_1() {
 
             <p><br></p>
             "
+        )
+    );
+}
+
+// ### Fragments in Markdown documents
+//
+// Translate a Markdown document as `doc.md`, returning the content the cache
+// stored for each of its fragments, keyed by id.
+fn markdown_fragment_contents(
+    // The Markdown document.
+    source: &str,
+    // Each fragment's cached content.
+) -> HashMap<String, String> {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    source_to_codechat_for_web(source, Path::new("doc.md"), 0.0, false, Some(cache.clone()))
+        .unwrap();
+    cache.lock().unwrap().files[Path::new("doc.md")]
+        .fragments
+        .iter()
+        .map(|(id, fragment)| (id.clone(), fragment.content.clone()))
+        .collect()
+}
+
+// As `markdown_fragment_contents`, but return only the content of the fragment
+// `frag`.
+fn markdown_fragment_content(
+    // The Markdown document.
+    source: &str,
+    // The fragment's cached content.
+) -> String {
+    markdown_fragment_contents(source)["frag"].clone()
+}
+
+// Verify that a fragment in a Markdown document hydrates like one in a source
+// file: no error, a cached content, and a save which writes back the original
+// tag.
+#[test]
+fn test_hydrate_fragment_in_markdown() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    let source = "<fragment id=\"f\"></fragment>\n";
+    let translation =
+        source_to_codechat_for_web(source, Path::new("foo.md"), 0.0, false, Some(cache.clone()))
+            .unwrap();
+    assert_eq!(
+        translation,
+        build_codechat_for_web(
+            MARKDOWN_MODE,
+            "<p><fragment contenteditable=false id=f></fragment>",
+            vec![]
+        )
+    );
+    assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
+    assert_eq!(
+        cache.lock().unwrap().files[Path::new("foo.md")].fragments["f"].content,
+        "<p></p>\n"
+    );
+}
+
+// Verify that, without a `following` attribute, a Markdown fragment placed in
+// a heading encloses that heading's whole section, subsections included, and
+// stops at the next heading of the same level. Its own tag and backlinks are
+// excluded.
+#[test]
+fn test_markdown_fragment_section() {
+    assert_eq!(
+        markdown_fragment_content(indoc!(
+            "
+            # Title
+
+            Intro.
+
+            ## Section <fragment id=\"frag\"></fragment>
+
+            One.
+
+            ### Subsection
+
+            Two.
+
+            ## Next
+
+            Excluded.
+            "
+        )),
+        "<h2>Section </h2>\n<p>One.</p>\n<h3>Subsection</h3>\n<p>Two.</p>\n"
+    );
+}
+
+// Verify that a Markdown fragment placed partway through a section begins with
+// the block holding its tag, and that a higher-level heading also ends it.
+#[test]
+fn test_markdown_fragment_mid_section() {
+    assert_eq!(
+        markdown_fragment_content(indoc!(
+            "
+            ## Section
+
+            Skipped.
+
+            <fragment id=\"frag\"></fragment>Kept.
+
+            * A list.
+
+            # Higher
+
+            Excluded.
+            "
+        )),
+        "<p>Kept.</p>\n<ul>\n<li>A list.</li>\n</ul>\n"
+    );
+}
+
+// Verify that a Markdown fragment before the first heading ends at the first
+// heading of any level, and that one in a list begins with the entire list.
+#[test]
+fn test_markdown_fragment_before_first_heading() {
+    assert_eq!(
+        markdown_fragment_content(indoc!(
+            "
+            * First.
+            * Second <fragment id=\"frag\"></fragment>
+
+            After.
+
+            ###### Lowest
+
+            Excluded.
+            "
+        )),
+        "<ul>\n<li>First.</li>\n<li>Second </li>\n</ul>\n<p>After.</p>\n"
+    );
+}
+
+// Verify that `following` counts top-level blocks in a Markdown document,
+// regardless of headings, and that it clamps at the end of the document.
+#[test]
+fn test_markdown_fragment_following() {
+    for (following, expected) in [
+        ("0", "<p>Start.</p>\n"),
+        ("2", "<p>Start.</p>\n<h2>Heading</h2>\n<p>After.</p>\n"),
+        (
+            "99",
+            "<p>Start.</p>\n<h2>Heading</h2>\n<p>After.</p>\n<p>End.</p>\n",
+        ),
+    ] {
+        assert_eq!(
+            markdown_fragment_content(&formatdoc!(
+                "
+                <fragment id=\"frag\" following=\"{following}\"></fragment>Start.
+
+                ## Heading
+
+                After.
+
+                End.
+                "
+            )),
+            expected,
+            "following=\"{following}\""
+        );
+    }
+}
+
+// Verify that a Markdown fragment whose section holds a gather element is an
+// error, and that `following` can stop it before the gather element.
+#[test]
+fn test_markdown_fragment_contains_gather() {
+    let source = |following: &str| {
+        formatdoc!(
+            "
+            ## Section <fragment id=\"frag\"{following}></fragment>
+
+            Text.
+
+            <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>
+            "
+        )
+    };
+    assert_eq!(
+        markdown_fragment_content(&source("")),
+        "<span class=\"cc-error\">a fragment may not contain a gather element</span>"
+    );
+    assert_eq!(
+        markdown_fragment_content(&source(" following=\"1\"")),
+        "<h2>Section </h2>\n<p>Text.</p>\n"
+    );
+}
+
+// Verify that a gather element nested inside a top-level block of a Markdown
+// fragment's section is also an error.
+#[test]
+fn test_markdown_fragment_contains_nested_gather() {
+    assert_eq!(
+        markdown_fragment_content(indoc!(
+            "
+            ## Section <fragment id=\"frag\"></fragment>
+
+            > <span id=\"gath\" data-gather=\"frag\">Gathered</span>
+            "
+        )),
+        "<span class=\"cc-error\">a fragment may not contain a gather element</span>"
+    );
+}
+
+// Verify that a Markdown fragment hydrates like a source file's: a gather
+// element in another file lists the fragment's section, and the fragment
+// renders a backlink to that gather element.
+#[test]
+fn test_markdown_fragment_gathered() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    let translate = |source: &str, path: &str| {
+        let translation =
+            source_to_codechat_for_web(source, Path::new(path), 0.0, false, Some(cache.clone()))
+                .unwrap();
+        let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+            panic!("No diff!");
+        };
+        code_mirror.doc
+    };
+    let gathering = "<h1 id=\"gath\" data-gather=\"frag\">Gathered</h1>";
+    let fragment = "## Section <fragment id=\"frag\"></fragment>\n\nText.\n";
+    translate(gathering, "a.md");
+    // The gather element is already cached, so the fragment's first
+    // translation shows its backlink; the gathering file needs a second
+    // translation to list the fragment.
+    assert_eq!(
+        translate(fragment, "b.md"),
+        "<h2>Section <fragment contenteditable=false id=frag>See <a href=a.md#gath>Gathered</a></fragment></h2><p>Text."
+    );
+    assert_eq!(
+        translate(gathering, "a.md"),
+        "<h1 class=cc-gather data-gather=frag id=gath>Gathered</h1><div class=cc-gather-items contenteditable=false><p class=cc-gather-item-link>From <a href=b.md#frag>b.md</a>:<h2>Section</h2><p>Text.</div>"
+    );
+}
+
+// Verify where a section ends for each kind of heading which can close it.
+#[test]
+fn test_markdown_fragment_section_end() {
+    for (name, source, expected) in [
+        (
+            "an empty section holds only its heading",
+            "## A <fragment id=\"frag\"></fragment>\n\n## B\n\nText.\n",
+            "<h2>A </h2>\n",
+        ),
+        (
+            "the last section runs to the end of the document",
+            "# Title\n\n## Last <fragment id=\"frag\"></fragment>\n\nOne.\n\nTwo.\n",
+            "<h2>Last </h2>\n<p>One.</p>\n<p>Two.</p>\n",
+        ),
+        (
+            "a level-1 section holds its level-2 sections",
+            "# A <fragment id=\"frag\"></fragment>\n\n## A.1\n\n## A.2\n\n# B\n",
+            "<h1>A </h1>\n<h2>A.1</h2>\n<h2>A.2</h2>\n",
+        ),
+        (
+            "a level-2 heading closes a level-3 section despite a deeper one between",
+            "### C <fragment id=\"frag\"></fragment>\n\n#### C.1\n\n## D\n",
+            "<h3>C </h3>\n<h4>C.1</h4>\n",
+        ),
+        (
+            "setext headings bound a section as ATX headings do",
+            "A <fragment id=\"frag\"></fragment>\n-\n\nText.\n\n### Deeper\n\nB\n-\n",
+            "<h2>A </h2>\n<p>Text.</p>\n<h3>Deeper</h3>\n",
+        ),
+        (
+            "a document without headings is one section",
+            "<fragment id=\"frag\"></fragment>One.\n\nTwo.\n",
+            "<p>One.</p>\n<p>Two.</p>\n",
+        ),
+    ] {
+        assert_eq!(markdown_fragment_content(source), expected, "{name}");
+    }
+}
+
+// Verify that a fragment inside a nested block -- a block quote or a table --
+// begins with the entire top-level block.
+#[test]
+fn test_markdown_fragment_nested_block() {
+    for (source, expected) in [
+        (
+            "Before.\n\n> Quote.\n>\n> More <fragment id=\"frag\"></fragment>\n\nAfter.\n",
+            "<blockquote>\n<p>Quote.</p>\n<p>More </p>\n</blockquote>\n<p>After.</p>\n",
+        ),
+        (
+            "| A | B |\n|---|---|\n| 1 | 2 <fragment id=\"frag\"></fragment> |\n",
+            "<table><thead><tr><th>A</th><th>B</th></tr></thead><tbody>\n<tr><td>1</td><td>2 </td></tr>\n</tbody></table>\n",
+        ),
+    ] {
+        assert_eq!(markdown_fragment_content(source), expected, "{source}");
+    }
+}
+
+// Verify that a fragment tag in a code span or a fenced code block is text,
+// not a fragment.
+#[test]
+fn test_markdown_fragment_in_code() {
+    let fragments = markdown_fragment_contents(indoc!(
+        "
+        Use `<fragment id=\"frag\"></fragment>` here.
+
+        ```html
+        <fragment id=\"frag2\"></fragment>
+        ```
+        "
+    ));
+    assert!(fragments.is_empty(), "{fragments:?}");
+}
+
+// Verify that two fragments in one Markdown document, one in a subsection of
+// the other, each enclose their own section, and that cleaning removes the
+// inner fragment's tag from the outer fragment's content.
+#[test]
+fn test_markdown_fragment_nested_sections() {
+    let fragments = markdown_fragment_contents(indoc!(
+        "
+        ## Outer <fragment id=\"outer\"></fragment>
+
+        Intro.
+
+        ### Inner <fragment id=\"inner\"></fragment>
+
+        Body.
+
+        ## Next
+        "
+    ));
+    assert_eq!(
+        fragments["outer"],
+        "<h2>Outer </h2>\n<p>Intro.</p>\n<h3>Inner </h3>\n<p>Body.</p>\n"
+    );
+    assert_eq!(fragments["inner"], "<h3>Inner </h3>\n<p>Body.</p>\n");
+}
+
+// Verify that `following` counts only elements: a comment between two blocks
+// is carried along but isn't a block.
+#[test]
+fn test_markdown_fragment_following_counts_only_elements() {
+    assert_eq!(
+        markdown_fragment_content(indoc!(
+            "
+            <fragment id=\"frag\" following=\"1\"></fragment>Start.
+
+            <!-- A note. -->
+
+            Next.
+
+            Excluded.
+            "
+        )),
+        "<p>Start.</p>\n<!-- A note. -->\n<p>Next.</p>\n"
+    );
+}
+
+// Verify how a Markdown fragment's `following` attribute parses: surrounding
+// whitespace is accepted, while a word, a negative or fractional count, or an
+// empty value produces the same error as in a source file.
+#[test]
+fn test_markdown_fragment_following_values() {
+    let source = |following: &str| {
+        format!(
+            "<fragment id=\"frag\" following=\"{following}\"></fragment>One.\n\nTwo.\n\nThree.\n"
+        )
+    };
+    assert_eq!(
+        markdown_fragment_content(&source(" 1 ")),
+        "<p>One.</p>\n<p>Two.</p>\n"
+    );
+    for following in ["x", "-1", "1.5", ""] {
+        assert_eq!(
+            markdown_fragment_content(&source(following)),
+            format!(
+                "<span class=\"cc-error\">the \"following\" attribute (\"{following}\") must be a whole number</span>"
+            ),
+            "following=\"{following}\""
+        );
+    }
+}
+
+// Verify that a Markdown fragment whose id isn't a valid CSS identifier
+// hydrates to an error, and that the cache records no fragment for it.
+#[test]
+fn test_markdown_fragment_invalid_id() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    let translation = source_to_codechat_for_web(
+        "<fragment id=\"1x\"></fragment>Text.\n",
+        Path::new("doc.md"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap();
+    assert_eq!(
+        translation,
+        build_codechat_for_web(
+            MARKDOWN_MODE,
+            "<p><fragment contenteditable=false id=1x><span class=cc-error>\"1x\" is not a valid CSS identifier</span></fragment>Text.",
+            vec![]
+        )
+    );
+    assert!(
+        cache.lock().unwrap().files[Path::new("doc.md")]
+            .fragments
+            .is_empty()
+    );
+}
+
+// Verify that text inside a Markdown fragment's tag is moved after the tag and
+// stays part of the fragment's section, rather than being lost.
+#[test]
+fn test_markdown_fragment_hoisted_content() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    let translation = source_to_codechat_for_web(
+        "## Section <fragment id=\"frag\">Title</fragment>\n\nBody.\n",
+        Path::new("doc.md"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap();
+    assert_eq!(
+        translation,
+        build_codechat_for_web(
+            MARKDOWN_MODE,
+            "<h2>Section <fragment contenteditable=false id=frag></fragment>Title</h2><p>Body.",
+            vec![]
+        )
+    );
+    assert_eq!(
+        cache.lock().unwrap().files[Path::new("doc.md")].fragments["frag"].content,
+        "<h2>Section Title</h2>\n<p>Body.</p>\n"
+    );
+}
+
+// Verify that a gather element and a Markdown fragment it lists hydrate in a
+// single pass over their common Markdown document.
+#[test]
+fn test_markdown_fragment_gather_same_file() {
+    let translation = source_to_codechat_for_web(
+        indoc!(
+            "
+            <h1 id=\"gath\" data-gather=\"frag\">Gathered</h1>
+
+            ## Section <fragment id=\"frag\"></fragment>
+
+            Text.
+            "
+        ),
+        Path::new("doc.md"),
+        0.0,
+        false,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        translation,
+        build_codechat_for_web(
+            MARKDOWN_MODE,
+            "<h1 class=cc-gather data-gather=frag id=gath>Gathered</h1><div class=cc-gather-items contenteditable=false><p class=cc-gather-item-link>From <a href=#frag>doc.md</a>:<h2>Section</h2><p>Text.</div><h2>Section <fragment contenteditable=false id=frag>See <a href=#gath>Gathered</a></fragment></h2><p>Text.",
+            vec![]
+        )
+    );
+}
+
+// Verify that a block added to a fragment's section joins the fragment with no
+// change to the tag: the file gathering the fragment becomes outdated, and its
+// next translation lists the new block.
+#[test]
+fn test_markdown_fragment_section_grows() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    let translate = |source: &str, path: &str| {
+        let translation =
+            source_to_codechat_for_web(source, Path::new(path), 0.0, false, Some(cache.clone()))
+                .unwrap();
+        let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+            panic!("No diff!");
+        };
+        code_mirror.doc
+    };
+    let gathering = "<h1 id=\"gath\" data-gather=\"frag\">Gathered</h1>";
+    let section = "## Section <fragment id=\"frag\"></fragment>\n\nOne.\n";
+    translate(gathering, "a.md");
+    translate(section, "b.md");
+    // Storing the fragment's content outdated the gathering file; bring it up
+    // to date before growing the section.
+    translate(gathering, "a.md");
+    translate(&format!("{section}\nTwo.\n"), "b.md");
+    assert_eq!(
+        cache.lock().unwrap().files[Path::new("a.md")].status,
+        FileStatus::Outdated
+    );
+    assert_eq!(
+        translate(gathering, "a.md"),
+        "<h1 class=cc-gather data-gather=frag id=gath>Gathered</h1><div class=cc-gather-items contenteditable=false><p class=cc-gather-item-link>From <a href=b.md#frag>b.md</a>:<h2>Section</h2><p>One.<p>Two.</div>"
+    );
+}
+
+// Verify which headings bound a Markdown fragment's section: a raw HTML heading
+// at the top level does, while a heading nested in a block quote, a list or a
+// raw HTML container does not.
+#[test]
+fn test_markdown_fragment_heading_bounds() {
+    for (name, source, expected) in [
+        (
+            "a top-level raw HTML heading ends the section",
+            "## A <fragment id=\"frag\"></fragment>\n\nOne.\n\n<h2>B</h2>\n\nTwo.\n",
+            "<h2>A </h2>\n<p>One.</p>\n",
+        ),
+        (
+            "a heading in a block quote doesn't end it",
+            "## A <fragment id=\"frag\"></fragment>\n\n> ## Quoted\n\nOne.\n\n## B\n",
+            "<h2>A </h2>\n<blockquote>\n<h2>Quoted</h2>\n</blockquote>\n<p>One.</p>\n",
+        ),
+        (
+            "a heading in a list doesn't end it",
+            "## A <fragment id=\"frag\"></fragment>\n\n* ## Listed\n\nOne.\n\n## B\n",
+            "<h2>A </h2>\n<ul>\n<li>\n<h2>Listed</h2>\n</li>\n</ul>\n<p>One.</p>\n",
+        ),
+        (
+            "a heading in a raw HTML container doesn't end it",
+            "## A <fragment id=\"frag\"></fragment>\n\n<div><h2>Boxed</h2></div>\n\nOne.\n\n## B\n",
+            "<h2>A </h2>\n<div><h2>Boxed</h2></div>\n<p>One.</p>\n",
+        ),
+        (
+            "a fragment in a nested heading begins with its whole block",
+            "## A\n\nZero.\n\n> ## Quoted <fragment id=\"frag\"></fragment>\n\nOne.\n\n## B\n",
+            "<blockquote>\n<h2>Quoted </h2>\n</blockquote>\n<p>One.</p>\n",
+        ),
+    ] {
+        assert_eq!(markdown_fragment_content(source), expected, "{name}");
+    }
+}
+
+// Verify that blocks are counted in the rendered HTML: a link reference
+// definition renders nothing, so `following` doesn't count it.
+#[test]
+fn test_markdown_fragment_following_skips_link_definitions() {
+    assert_eq!(
+        markdown_fragment_content(indoc!(
+            "
+            <fragment id=\"frag\" following=\"1\"></fragment>Start [link].
+
+            [link]: https://example.com
+
+            Next.
+
+            Excluded.
+            "
+        )),
+        "<p>Start <a href=\"https://example.com\">link</a>.</p>\n<p>Next.</p>\n"
+    );
+}
+
+// Verify that an unparsable `following` attribute also shows its error in the
+// fragment's tag, not only in the cached content.
+#[test]
+fn test_markdown_fragment_following_error_in_tag() {
+    let translation = source_to_codechat_for_web(
+        "<fragment id=\"frag\" following=\"x\"></fragment>Text.\n",
+        Path::new("doc.md"),
+        0.0,
+        false,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        translation,
+        build_codechat_for_web(
+            MARKDOWN_MODE,
+            "<p><fragment contenteditable=false following=x id=frag><span class=cc-error>the \"following\" attribute (\"x\") must be a whole number</span></fragment>Text.",
+            vec![]
+        )
+    );
+}
+
+// Verify that a gather element in the same top-level block as the fragment's
+// tag can't be excluded, even with `following="0"`, and that the tag keeps its
+// backlinks while its content is this error.
+#[test]
+fn test_markdown_fragment_gather_in_own_block() {
+    let translation = source_to_codechat_for_web(
+        "<fragment id=\"frag\" following=\"0\"></fragment>Text <span id=\"gath\" data-gather=\"frag\">Gathered</span>\n",
+        Path::new("doc.md"),
+        0.0,
+        false,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        translation,
+        build_codechat_for_web(
+            MARKDOWN_MODE,
+            "<p><fragment contenteditable=false following=0 id=frag>See <a href=#gath>Gathered</a></fragment>Text <span data-gather=frag id=gath>Gathered</span><div class=cc-gather-items contenteditable=false><p class=cc-gather-item-link>From <a href=#frag>doc.md</a>:</p><span class=cc-error>a fragment may not contain a gather element</span></div><p>",
+            vec![]
         )
     );
 }

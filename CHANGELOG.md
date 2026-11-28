@@ -23,6 +23,10 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+* Allow fragments in Markdown documents. A Markdown fragment encloses the block
+  containing its tag through the end of the current section, or, with a
+  `following` attribute, that many further top-level blocks.
+
 Version 0.3.2 -- 2026-Nov-09
 ----------------------------
 
