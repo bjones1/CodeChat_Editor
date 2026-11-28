@@ -37,21 +37,154 @@ GitHub userid: noxfurry
 
 #### Contributions
 
-(Nurlybek Orynbassar's contributions)
+Implemented Markdown fragments in the Server -- accepting a `<fragment>` in a
+Markdown document, finding the section it encloses, and rendering that content
+for gather elements -- and wrote the "Rendering a fragment's content"
+subsection of the specification.
 
 #### Build and run test
 
-(Summarized LLM output)
+In a new context, Claude Opus 5.5 (Claude Code) was given the prompt `Verify
+that you can build and run the project in the current git repo.` It found that
+Rust, Node.js and pnpm were installed, but the client and extension packages
+and `cargo-nextest` were missing. Rather than run `./bt install`, which pipes
+remote install scripts into the shell, it ran `pnpm install` in `client/` and
+`extensions/VSCode/`, installed `cargo-nextest` with `cargo install
+cargo-nextest --locked`, and applied the library fix-ups `./bt install` would
+have made. `./bt build` then finished with no errors: the Rust workspace, the
+binding-export test, the client bundles and type check, and the VS Code
+extension all built. It started the standalone server with `cargo run --
+serve` in `extensions/standalone`, which served a rendered `README.md` (HTTP
+200) on 127.0.0.1:8080, then stopped it. It noted that `docs/design.md` still
+gives an outdated start command (`cargo run -- start` in `server/`, now a
+library).
 
 #### Specification review rounds
 
-(Table showing spec review rounds)
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 8 | No factual errors; `contenteditable` kept only on `<span>` and `<xref>`, comments after the last block come along, the cleaning list marked as not exhaustive, cross-reference re-hydration noted, a repetition of "Details" removed |
+| 2 | 6 | No factual errors; pointed to the fragment cleaner itself, since "HTML cleaning" omits most of its rules; said which comments come along; restored the `cc-fragment-*` wrappers; described relative URLs as unsupported, matching "HTML cleaning" |
+| 3 | 5 | No factual errors; two wording fixes: only line numbers and indents attributed to "Details", and the cleaner's code, not its comment, named as the complete rules |
+| 4 | 3 | No changes: the round 3 fixes were confirmed and no new findings appeared; all 3 findings repeated earlier ones |
 
 #### Last specification review
 
-(LLM and prompt used)
+Prompting Claude Opus 5.5 (a Claude Code agent started with no prior context)
+with `Review only the section named "Rendering a fragment's content" under
+"Fragments in Markdown documents" in server/src/processing/cache-spec.md,
+writing findings to review.md.` produced the following output. The agent also
+received a note that it was reviewing a student's clone for a course
+assignment, and should write only `review.md`. Strikethrough indicates output
+that I deemed irrelevant: each struck finding repeats one rejected in earlier
+rounds, because it asks for a new test rather than a change to the
+specification, or describes an internal cache detail (a comment or a trailing
+space stored but harmless when displayed).
 
-(LLM output, possibly with strikethrough)
+> Review: "Rendering a fragment's content" (round 4)
+> ==================================================
+>
+> Scope: only the subsection `#### Rendering a fragment's content` under
+> "Fragments in Markdown documents" in `server/src/processing/cache-spec.md`
+> (lines 248-286 at commit 669e855, which applied round 3). It was checked
+> against `server/src/processing.rs` (`render_markdown_fragment_content`,
+> `markdown_fragment_range`, `node_outer_html`, `CLEAN_FRAGMENT_HTML`,
+> `AMMONIA_OPTIONS`, `minify`) and `server/src/processing/tests.rs`.
+>
+> How it was verified: by reading the diff of 669e855 (spec only, 10 lines) and
+> the code it describes, and by running the existing `markdown_fragment` tests
+> (17 passed, built into a scratch target directory). No code or test changed
+> since round 3, so the claims verified in rounds 2 and 3 still hold and were not
+> re-probed. No file in the repository was changed apart from this one.
+>
+> Summary
+> -------
+>
+> Round 3's two wording findings (1 and 2) are fixed, and the new text is
+> accurate. The section is now correct and internally consistent. What remains is
+> unchanged from round 3: one optional consequence (finding 3), the undocumented
+> trailing space (finding 4), and the missing test (finding 5).
+>
+> Round 3 follow-up
+> -----------------
+>
+> | Round 3 finding | Status |
+> | --------------- | ------ |
+> | 1. "As noted under Details" covers the wrappers, which Details doesn't mention | Fixed: "none of the `cc-fragment-*` wrappers of a source file's fragment, nor the line numbers and indents noted under 'Details' above". Details says the content "carries no line numbers or indents", so the reference now covers exactly what Details states |
+> | 2. "Holds the complete rules" is true of the code, not its comment | Fixed: "whose code defines the complete rules". The comment on `CLEAN_FRAGMENT_HTML` still begins "like `AMMONIA_OPTIONS`" and omits the `<span>`/`<xref>` restriction and the class allowlist, but that is outside this subsection and the spec no longer points the reader at it |
+> | 3. Optional: a comment before the closing heading is carried into the fragment | Not addressed (optional) |
+> | 4. The space a removed tag leaves in a heading is stored | Not addressed |
+> | 5. No test covers this section's claims | Not addressed |
+>
+> Claims verified (changed text)
+> ------------------------------
+>
+> | Claim | Where in the code | Result |
+> | ----- | ----------------- | ------ |
+> | `CLEAN_FRAGMENT_HTML`'s code defines the complete cleaning rules | `render_markdown_fragment_content` returns `CLEAN_FRAGMENT_HTML.clean(&html)` with no other filtering of the stored content | Correct for the stored content; see finding 4 for display |
+> | It keeps a `contenteditable` of `false` only on `<span>` and `<xref>` | `add_tag_attributes` lists `contenteditable` only for `span` and `xref`; `attribute_filter` drops any value but `false` | Correct |
+> | No `cc-fragment-*` wrappers, line numbers or indents | The Markdown path concatenates `node_outer_html` of `top_level[range]`; only the source-file path in `store_fragment_contents` emits those wrappers | Correct |
+>
+> Findings
+> --------
+>
+> ### ~~1. Optional: a comment introducing the next section is carried into the fragment (consequence, from round 3)~~
+>
+> ~~Unchanged. Step 2 says comments "following the last one, up to the next block~~
+> ~~outside the fragment" come along, so in~~
+>
+> ```markdown
+> ## A <fragment id="f"></fragment>
+>
+> One.
+>
+> <!-- Notes for section B. -->
+>
+> ## B
+> ```
+>
+> ~~the comment meant for section B is stored in `f` (`markdown_fragment_range`~~
+> ~~ends the range at the index of `## B`, and `CLEAN_FRAGMENT_HTML` sets~~
+> ~~`strip_comments(false)`). It is harmless when rendered. If worth a line, add~~
+> ~~a consequence: "A comment just before the heading which ends the fragment~~
+> ~~belongs to the fragment, not to the next section."~~
+>
+> ### ~~2. Still undocumented: the space before a tag in a heading is stored (minor, from rounds 1-3)~~
+>
+> ~~`## Section <fragment id="frag"></fragment>` stores `<h2>Section </h2>`, which~~
+> ~~the heading tests expect; the minifier removes the space before display. The~~
+> ~~same is true of the new wording in step 3: the "complete rules" are those of the~~
+> ~~stored content, while a gathering document's output additionally passes through~~
+> ~~`minify` (`AMMONIA_OPTIONS`, then `minify_html`). One sentence after step 3~~
+> ~~would cover both: "Display passes the content through the usual minification,~~
+> ~~which, for example, drops the space a removed tag leaves at the end of a~~
+> ~~heading."~~
+>
+> ### ~~3. Still no test covers this section's claims (test coverage, from rounds 1-3)~~
+>
+> ~~Commit 669e855 changed only the spec. Of this section's claims, only~~
+> ~~"comments between enclosed blocks come along" is pinned by a test~~
+> ~~(`test_markdown_fragment_following_counts_only_elements`).~~
+> ~~`test_markdown_fragment_gathered` and `test_markdown_fragment_gather_same_file`~~
+> ~~gather plain text only. Untested remain: comments after the last block and not~~
+> ~~before the first; math and diagram hydration in stored content; removal of `id`~~
+> ~~and of an id-less `data-gather`; removal of another fragment's tag and~~
+> ~~backlinks; the `contenteditable` filter (dropped on `<div>`, `true` dropped on~~
+> ~~`<span>`); cross-references re-hydrated in a gathering file in another~~
+> ~~directory; a relative image URL copied unchanged.~~
+>
+> ~~A single `test_markdown_fragment_rendering` test that gathers a section of~~
+> ~~`b.md` into `sub/dir/a.md` and asserts both the stored content and the~~
+> ~~gathering file's output would pin all of them.~~
+>
+> Verdict
+> -------
+>
+> The prose of this subsection is now done: it is accurate, its pointers say
+> what they point to, and round 3's fixes introduced no new problems. Findings 1
+> and 2 are optional one-sentence additions. Finding 3, the missing test, is the
+> only substantive gap left and has been carried through four rounds; further
+> spec-only rounds won't close it.
 
 ### Miras Shaltayev
 
