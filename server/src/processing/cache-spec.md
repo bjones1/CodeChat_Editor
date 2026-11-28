@@ -247,23 +247,26 @@ Details:
 
 #### Rendering a fragment's content
 
-A gather element displays a Markdown fragment's content as stored in the cache.
-This content is produced when the fragment's document is hydrated, as follows:
+A gather element displays a Markdown fragment's content as stored in the cache,
+with its cross-references re-hydrated. This content is produced when the
+fragment's document is hydrated, as follows:
 
 1. Hydrate the document's cross-references, math, diagrams, and fragment
    backlinks, but not its gather lists, which depend on fragment contents.
-2. Serialize the blocks the fragment encloses, each with its own tag, in
-   document order. Comments and the whitespace between blocks come along.
-3. Clean this HTML as for any fragment: remove every `id` and `data-gather`,
-   so that the gathered copy defines no target or gather element and duplicates
-   no id; remove every `<fragment>` along with its backlinks, including those
-   of other fragments in the same blocks; keep only a `contenteditable` of
-   `false`.
+2. Serialize the outer HTML of each enclosed block, in document order. Comments
+   and whitespace after each enclosed block, up to the next block outside the
+   fragment, come along.
+3. Clean this HTML as for any fragment (see
+   <xref ref="cc-2dkkF9YJnL"></xref>). Among other things, this removes every
+   `id` and `data-gather`, so that the gathered copy defines no target or
+   gather element and duplicates no id; removes every `<fragment>` along with
+   its backlinks, including those of other fragments in the same blocks; and
+   keeps a `contenteditable` of `false` only on `<span>` and `<xref>`, the
+   markers which math and cross-reference hydration add.
 
-The result is the document's own HTML, not a reproduction of its source. Unlike
-a source file's fragment, it has no line numbers, indents, or `cc-fragment-*`
-wrappers, since a Markdown document has neither source lines worth numbering
-nor code to align.
+The result is therefore the document's own HTML, not a reproduction of its
+source, which is why it lacks the line numbers and indents noted under
+"Details" above.
 
 Consequences:
 
