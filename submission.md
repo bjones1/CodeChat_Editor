@@ -126,3 +126,31 @@ that I deemed incorrect or irrelevant.
 10. **Nit: the error rules don't match the fragment rules.** A `ref` that is
     empty should be treated like a missing one, matching the rule for a
     fragment's `id`.
+
+
+Team member: Aruzhan Matzhan (GitHub: TODO username)
+----------------------------------------------------
+
+### Contribution (5 points)
+
+Wrote the first draft of the "Inline inclusion of fragments" section of
+`server/src/processing/cache-spec.md` (commit `6be1387`, branch
+`feature-markdown-2`): the `<include ref="id"></include>` syntax for inserting
+the text of a fragment into the surrounding content; the rules for choosing the
+included content (flattening to inline content when the include shares its host
+with other text, and inserting the doc content unchanged when it is the only
+content of its doc block); the error cases; the dependency and cache-layer
+rules (layer 6, removal of includes from `Fragment::content` and
+`Target::inner_html`); and the open questions.
+
+### Build and run check (5 points)
+
+TODO: paste a summary of the LLM's output.
+
+### Review rounds (10 points)
+
+TODO: describe the review rounds.
+
+### Last review (10 points)
+
+TODO: paste the model, effort, prompt, and output of the last review.
