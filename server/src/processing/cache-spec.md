@@ -313,8 +313,8 @@ matching `test_markdown_fragment_*` test in `tests.rs`.
 
 #### Edge cases and errors
 
-These bullets describe the code in `processing.rs`; not every one has its own
-test.
+These bullets describe the code in `processing.rs`;
+<xref ref="cc-MvsDHHHWVW"></xref> lists the test for each.
 
 * Blocks are counted in the rendered HTML, not in the Markdown source: a blank
   line or a link reference definition is no block. A tag alone in its own
@@ -346,6 +346,57 @@ test.
 * A block added to a fragment's section joins the fragment. Every document which
   gathers the fragment is marked outdated, and lists the new block when it is
   next rendered.
+
+<h4 id="cc-MvsDHHHWVW">Testing</h4>
+
+The tests for Markdown fragments are unit tests in `tests.rs`, named
+`test_markdown_fragment_*`, plus `test_hydrate_fragment_in_markdown`, which
+checks a tag alone in its paragraph: its hydrated tag, its save back to source,
+and its stored content. Each test translates one or more Markdown documents
+with `source_to_codechat_for_web`, using a new cache or none, so tests do not
+share state. There is no browser test: browser tests run slowly, and the Client
+handles a fragment tag in a Markdown document as it does in a source file.
+
+Each test checks at least one of these results:
+
+* The content the cache stores for the fragment, which is what a gather element
+  displays. Most tests check this, since it shows exactly which blocks the
+  fragment encloses.
+* The translated document, when a rule concerns what the document itself
+  shows: the fragment's tag, its backlinks, an error in the tag, or a gather
+  list.
+* The cache's record of a file: no fragment stored for an invalid `id` or a tag
+  in code, or a gathering file marked outdated.
+
+Tests compare complete strings, not substrings, or make sure that no fragment
+is stored, so that an extra or a missing block fails the test. Stored content is
+not minified: a heading which held the tag keeps the space that preceded the
+tag, as in `<h2>A </h2>`; the translated document is minified, so its gather
+list shows `<h2>A</h2>`.
+
+Each test name below omits the `test_markdown_fragment` prefix, except
+`test_hydrate_fragment_in_markdown`. The tests `_gathered` and `_section_grows`
+involve several documents, which they translate in order with one shared cache.
+A document's gather list shows only fragments already in the cache, and a
+fragment's backlinks show only gather elements already in the cache; these
+tests therefore translate a document again after the document it depends on.
+
+The tests for the edge cases are:
+
+| Edge case | Tests |
+| --------- | ----- |
+| Blocks are counted in the rendered HTML | `_following_skips_link_definitions`; `test_hydrate_fragment_in_markdown` for a tag alone in its paragraph |
+| A tag in code is text | `_in_code` |
+| An invalid `id` | `_invalid_id` |
+| `following` values | `_following_values` for the stored content, `_following_error_in_tag` for the tag |
+| A gather element among the enclosed blocks | `_contains_gather`, `_contains_nested_gather`, `_gather_in_own_block` |
+| Only top-level headings bound a section | `_heading_bounds` |
+| Text inside the tag | `_hoisted_content` |
+| A gather element in the fragment's own document | `_gather_same_file` |
+| A block added to a section | `_section_grows` |
+
+A change to the examples or the edge cases needs a matching change to these
+tests.
 
 #### Rationale
 
