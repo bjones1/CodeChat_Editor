@@ -663,10 +663,68 @@ without a newline consistently.
 
 #### Implementation review rounds
 
-(Table showing implementation review rounds)
+| Round | Scope | Findings | Resolved |
+| :--- | :--- | :--- | :--- |
+| 1 | Implementation against `server/src/processing/line-number-tags-spec.md`: placement, source offsets, lexer metadata, sanitization/hydration, dehydration, comparison, and Client configuration | 2 (1 P3 warning-line bug, 1 P3 missing required regression test) | 0; both remain open. Passed 22 line-number unit tests, 2 lexer metadata tests, and the warning integration test. |
 
 #### Last implementation review
 
-(LLM and prompt used)
+**LLM used:** GPT-6 (Codex)
+**Prompt used:** `review server/src/processing/line-number-tags-spec.md`
 
-(LLM output, possibly with strikethrough)
+Reviewed the complete specification against `server/src/processing.rs`, both
+lexer paths and their metadata tests, `server/src/translation.rs`, the Client's
+TinyMCE configuration, CSS and caret placement, and associated regression tests.
+The Consumers subsection is explicitly informative and was not treated as an
+implementation requirement.
+
+1. **~~~[P3] Count lone CR when locating warnings inside HTML events.~~~**
+   `escape_hand_written_tags` (`server/src/processing.rs:1901`) computes a
+   match's line by counting only `\n` in the event prefix; `scan_raw_text`
+   (`:1968`) uses the same calculation for an opener. The spec explicitly
+   counts lone `\r` as a line ending (`line-number-tags-spec.md:198-204`) and
+   requires warnings to name the source line (`:80-84`, `:177-181`). A temporary
+   probe translating `<a\rtitle="<l-n>">a</a>` reported `review.md:1` for the
+   reserved tag on line 2; `<div>\r<l-n>x</l-n>\r</div>` also reported line 1
+   for both tags on line 2. The unclosed opener in
+   `<div>\r<textarea>\n\na` likewise produced an opener warning for line 1
+   instead of line 2, before hydration rejected the unclosed HTML. Apply the
+   same LF/CRLF/lone-CR rules as `LineStarts` to offsets within HTML events.
+   Extend `server/tests/line_number_warnings.rs` to assert file paths and actual
+   line numbers for mixed endings; its current assertions check warning counts
+   and the word `reserved`, so they miss this bug.
+
+2. **~~~[P3] Add the required save regression for hand-written tags.~~~**
+   The specification requires escaped hand-written tags to survive save
+   (`line-number-tags-spec.md:411-415`). `test_line_number_tags_hand_written`
+   (`server/src/processing/tests.rs:3951-3972`) checks only forward translation,
+   and `server/tests/line_number_warnings.rs:76-96` checks warnings. The
+   dehydration tests exercise injected or pasted DOM tags, which must be
+   deleted, rather than escaped hand-written tags, whose text must survive.
+   A regression that deleted this literal text during save would therefore
+   pass these tests. Add round-trip assertions through
+   `source_to_codechat_for_web` and `codechat_for_web_to_source` for inline HTML
+   and HTML blocks in Markdown documents and source-file doc blocks.
+   The temporary probe confirmed that `a <l-n>5</l-n> b\n` saves as
+   `a \<l-n>5\</l-n> b\n`; the JavaScript doc-block path preserves the same
+   escaped text after `// `. An HTML-block input
+   `<div>\r<l-n>x</l-n>\r</div>` saves as
+   `<div>&lt;l-n&gt;x&lt;/l-n&gt;</div>\n`. These results preserve literal text
+   with normalized Markdown spelling; they are not evidence of text loss.
+   The finding is missing required regression coverage.
+
+No other functional deviations were found in the inspected placement rules,
+source-line mapping, source heights, hydration/dehydration passes, comparison,
+or Client configuration. Client behavior was inspected but not browser-tested.
+
+Validation (all commands run with `-p codechat-editor-server` and `--offline`):
+
+* `cargo test --lib line_number`: 22 passed, 165 filtered out.
+* `cargo test --lib line_metadata`: 2 passed, 185 filtered out.
+* `cargo test --test line_number_warnings`: 1 passed.
+* A temporary integration probe reproduced the incorrect warning lines and
+  checked save behavior in Markdown-document and JavaScript doc-block paths;
+  it was removed after review.
+
+The full suite and browser tests were not run. Only `submission.md` remains
+changed; neither finding was fixed during this review.
