@@ -258,17 +258,18 @@ fragment's document is hydrated, as follows:
    following the last one, up to the next block outside the fragment; those
    preceding the first enclosed block don't.
 3. Clean this HTML with the fragment cleaner, `CLEAN_FRAGMENT_HTML` in
-   `processing.rs`, which holds the complete rules. Among other things, it
-   removes every `id` and `data-gather`, so that the gathered copy defines no
-   target or gather element and duplicates no id; removes every `<fragment>`
-   along with its backlinks, including those of other fragments in the same
-   blocks; and keeps a `contenteditable` of `false` only on `<span>` and
-   `<xref>`, the markers which math and cross-reference hydration add.
+   `processing.rs`, whose code defines the complete rules. Among other things,
+   it removes every `id` and `data-gather`, so that the gathered copy defines
+   no target or gather element and duplicates no id; removes every
+   `<fragment>` along with its backlinks, including those of other fragments
+   in the same blocks; and keeps a `contenteditable` of `false` only on
+   `<span>` and `<xref>`, the markers which math and cross-reference hydration
+   add.
 
 Since step 2 copies the rendered blocks themselves, the result is the
-document's own HTML, not a reproduction of its source: it has none of the line
-numbers, indents, or `cc-fragment-*` wrappers of a source file's fragment, as
-noted under "Details" above.
+document's own HTML, not a reproduction of its source: it has none of the
+`cc-fragment-*` wrappers of a source file's fragment, nor the line numbers and
+indents noted under "Details" above.
 
 Consequences:
 
