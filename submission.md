@@ -15,21 +15,118 @@ GitHub userid: aronggarbay
 
 #### Contributions
 
-(Armanzhan Onggarbay's contributions)
+Wrote the "Fragments in Markdown documents" section of `cache-spec.md` and its
+rationale, extended the `following` attribute to Markdown fragments, and added
+tests for Markdown fragments.
 
 #### Build and run test
 
-(Summarized LLM output)
+Claude Opus 5.5 (Claude Code) found that Rust was not installed, but the Visual
+Studio 2022 C++ build tools were, so it installed rustup with
+`winget install Rustlang.Rustup`. `./bt build` then compiled the builder and the
+Server, but stopped at `cargo nextest run export_bindings`, since
+`cargo-nextest` is not installed; Node.js, which the Client build needs, is not
+installed either. `cargo build` in `server/` finished with no errors, and the
+resulting `codechat-editor-standalone --help` printed its usage and exited with
+code 0. `cargo test --lib` in `server/` passed 148 tests, ignored 1, and failed
+16: every failure is an `ide::vscode` websocket test which panics because
+`server/hashLocations.json` is missing, a file which only the Client build
+produces. `cargo fmt --check` passed, and `cargo clippy --all-targets` reported
+no warnings in the code this project changed.
 
 #### Specification review rounds
 
-(Table showing spec review rounds)
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 8 | "Every other rule applies" now excludes the layout rule and reads "block" for "code/doc block"; scope limited to Markdown documents, not doc blocks; option 2's Markdown argument made precise and hoisting cited; the heading's inclusion stated (O1, O4 and O5 were dropped when merging with teammates' work, since the "Rendering a fragment's content" and "Edge cases and errors" subsections, written in parallel, already cover them) |
 
 #### Last specification review
 
-(LLM and prompt used)
+Claude Opus 5.5 (Claude Code), with the prompt: "Review the section named
+"Fragments in Markdown documents" in server/src/processing/cache-spec.md,
+writing findings to review.md. Verify each claim about the implementation by
+running throwaway code, and do not commit it. Do not edit cache-spec.md."
 
-(LLM output, possibly with strikethrough)
+Findings which were not applied are struck through.
+
+> **Review of "Fragments in Markdown documents" in cache-spec.md (round 1)**
+>
+> This reviews the section as of a621a07. Each behavioral claim was checked
+> with a throwaway unit test in `server/src/processing/tests.rs` (since
+> reverted), which translated Markdown documents through
+> `source_to_codechat_for_web` with a cache and printed each fragment's cached
+> content and each file's `FileStatus`.
+>
+> **Errors**
+>
+> **E1. "Every other rule applies unchanged" contradicts three of those
+> rules.** The layout bullet says a fragment's rendering has line numbers and
+> indents, which this section itself says a Markdown fragment lacks. The
+> `following="0"` and clamping bullets are worded in terms of "the current doc
+> block" and "code/doc blocks". Suggested change: the other rules apply with
+> "block" in place of "code/doc block", except the one about reproducing a
+> source file's layout.
+>
+> **Omissions**
+>
+> **O1. Which headings end a section is unstated.** Only a top-level heading
+> ends a section. `> ## Quoted` and `* ## Listed` inside a section's range were
+> enclosed, not treated as section ends. A heading written in HTML counts like
+> one written in Markdown: `<h2>Raw</h2>` ended a fragment begun under a setext
+> `---` heading. This matters because gather elements are usually written as
+> HTML headings.
+>
+> **O2. Scope is unstated.** The section applies to Markdown documents, not to
+> Markdown inside a source file's doc block. A fragment in `// ## H` in `s.js`
+> still enclosed its doc block and the following code block, with line
+> numbers, and ignored the `// ## Next` heading after it.
+>
+> **O3. Option 2's Markdown argument is imprecise.** "An HTML block ends at a
+> blank line" is true, but the consequence is specific: a line holding only
+> `<fragment id="x">` starts an HTML block, so the Markdown after it, up to the
+> next blank line, is left unparsed. `markdown_to_html` gave
+> `"<fragment id=\"x\">\n*a*\n<p>b</p>\n</fragment>\n"`; `*a*` stayed literal.
+> The argument should also cite hoisting, which moves anything inside a
+> `<fragment>` to after it, so enclosed text would not stay enclosed.
+>
+> **O4. Comments between blocks are unstated.** Whitespace and comments belong
+> to the block before them, so a comment right after the last enclosed block
+> is enclosed: `following="0"` on `Start.` followed by `<!-- note -->` gave
+> `"<p>Start.</p>\n<!-- note -->\n"`.
+>
+> **O5. A tag in a paragraph of its own leaves an empty paragraph.** A
+> `<fragment>` alone on a line becomes a paragraph whose only content is the
+> tag, which cleaning removes: the content began with `"<p></p>\n"`. The
+> section should steer authors to place the tag in a heading or at the start of
+> a paragraph's text.
+>
+> **O6. "Encloses that heading's entire section" doesn't say the heading
+> itself is included.** It is (`"<h2>Section </h2>\n..."`), so a gather element
+> shows it as the first line of the fragment. State this.
+>
+> ~~**O7. A gather element with a missing or invalid id doesn't trigger "a
+> fragment may not contain a gather element".** `<h3 data-gather="frag">G</h3>`
+> in the section was enclosed without error.~~ (Not applied: source-file
+> fragments behave the same way, and this is a rule of the general fragments
+> section, not of this one.)
+>
+> **Verified as stated**
+>
+> * A fragment in a heading encloses that heading's section, subsections
+>   included; one in `### S` stopped at the next `###`, enclosing a `####`.
+> * A fragment partway through a section starts at its block; a higher-level
+>   heading ends it.
+> * A fragment before the first heading ends at the first heading of any level.
+> * `following` counts top-level elements, ignores headings, and clamps.
+> * An unparsable `following` gives the same error as in a source file.
+> * A fragment in a list item begins with the whole list.
+> * Indirection holds: changing target `c` in `c.md` outdated `b.md` (which
+>   holds the fragment and an `<xref ref="c">`), and re-translating `b.md`
+>   stored the new link text and outdated `a.md`, which gathers the fragment.
+> * Option 2's claim that hydration sets `contenteditable=false` on the tag and
+>   replaces its content with backlinks.
+>
+> Summary: 8 findings (1 error, 7 omissions); 7 applied, 1 not applied.
 
 ### Nurlybek Orynbassar
 

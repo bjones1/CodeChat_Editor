@@ -241,16 +241,7 @@ Markdown document encloses:
 Details:
 
 * Only top-level elements count as blocks. A fragment inside a list item or a
-  block quote therefore begins with the entire list or block quote. Likewise,
-  only a top-level heading ends a section; a heading inside a block quote or a
-  list is enclosed like any other content. A heading written in HTML, such as a
-  gather element's `<h3 id="..." data-gather="...">`, counts the same as one
-  written in Markdown.
-* Whitespace and comments between blocks belong to the block before them, so a
-  comment just after a fragment's last block is part of the fragment.
-* A tag on a line of its own becomes a paragraph containing only the tag, which
-  the gathered content shows as an empty paragraph. Place the tag in a heading
-  or at the start of a paragraph's text instead.
+  block quote therefore begins with the entire list or block quote.
 * The fragment's content is the cleaned, hydrated HTML of the blocks it
   encloses. Unlike a source file's fragment, it carries no line numbers or
   indents: a Markdown document's layout is its rendered HTML.
