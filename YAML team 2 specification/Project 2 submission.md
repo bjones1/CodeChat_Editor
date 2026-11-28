@@ -177,7 +177,7 @@ I completed the first five specification review rounds with Codex, clarified how
 | Round | Findings | Main changes made |
 | --- | ---: | --- |
 | 1 | 3 | Reconciled the two extraction rules, defined one reconstruction separator for each payload ending, and allowed a closing delimiter at end of file. |
-| 2 | 4 | Named pulldown-cmark and htmd, restored direct script text for ordinary input, fixed the example that lost the author field, and corrected the remaining LF-only cross-reference. |
+| 2 | 4 | Clarified the Markdown-to-HTML and HTML-to-Markdown paths in CodeChat Editor, restored direct script text for ordinary input, fixed the example that lost the author field, and corrected the remaining LF-only cross-reference. |
 | 3 | 5 | Defined traversal and leading whitespace, distinguished source and DOM duplicate handling, scoped metadata-loss detection to observable editor operations, and specified an error for decoded delimiter lines. |
 | 4 | 3 | Added exact newline examples, direct-text and encoded HTML fixtures, and concrete discovery and rejection cases. |
 | 5 | 2 | Fixed the broken representation link and removed draft-editing residue from the normative document. |

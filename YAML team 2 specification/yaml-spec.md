@@ -1,4 +1,4 @@
-YAML Front Matter Preservation
+YAML Front Matter Preservation in CodeChat Editor
 ==============================
 
 Status
@@ -10,7 +10,7 @@ Purpose
 -------
 
 Preserve YAML metadata at the beginning of a Markdown document across Markdown
-to HTML and HTML to Markdown conversion.
+to HTML and HTML to Markdown conversion in CodeChat Editor.
 
 YAML is opaque text: the editor must not parse, validate, reorder, or reformat
 it. Opaqueness does not exempt it from this specification's character, UTF-8,
@@ -41,7 +41,8 @@ Markdown to HTML
 
 1. Enable the YAML-style metadata option in the CodeChat pulldown-cmark
    rendering path. Use source text for the payload so parser normalization
-   cannot change it. The reverse conversion belongs in htmd.
+   cannot change it. CodeChat Editor must restore the metadata through its HTML-to-Markdown
+   conversion path when saving the document.
 
 2. A delimiter is a line whose entire content is exactly `---`, excluding its
    line terminator. Surrounding whitespace is not allowed.
@@ -223,7 +224,7 @@ At minimum, tests must cover:
   opening and saving.
 
 Exact examples use escape notation for line endings. Each row has an empty
-Markdown body. The last column is the canonical Markdown returned by htmd.
+Markdown body. The last column is the canonical Markdown returned by CodeChat Editor.
 
 | Markdown input | Script payload after decoding | Returned Markdown |
 | --- | --- | --- |
