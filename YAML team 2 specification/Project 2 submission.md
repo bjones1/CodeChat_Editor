@@ -10,7 +10,8 @@ Responsibilities:
 -----------------
 
 * Altynay - responsible for draft and overall project management.
-* Ali and Aiym - responsible for finalizing specification.
+* Aiym - responsible for final specification review rounds 1–5.
+* Ali - responsible for final specification review rounds 6–10, using Aiym’s revised specification.
 * Daulet - responsible for finalizing implementation part.
 
 Draft submission
@@ -163,6 +164,45 @@ differences between implementations.
 Final submission
 ----------------
 
+### Aiym
+
+GitHub userid: aiymsaparkhan
+
+#### Contributions
+
+I completed the first five specification review rounds with Codex, clarified how YAML front matter is preserved during Markdown-to-HTML and HTML-to-Markdown conversion, corrected the example so it retains both metadata fields, and verified six line-ending examples.
+
+#### Spec review rounds
+
+| Round | Findings | Main changes made |
+| --- | ---: | --- |
+| 1 | 3 | Reconciled the two extraction rules, defined one reconstruction separator for each payload ending, and allowed a closing delimiter at end of file. |
+| 2 | 4 | Named pulldown-cmark and htmd, restored direct script text for ordinary input, fixed the example that lost the author field, and corrected the remaining LF-only cross-reference. |
+| 3 | 5 | Defined traversal and leading whitespace, distinguished source and DOM duplicate handling, scoped metadata-loss detection to observable editor operations, and specified an error for decoded delimiter lines. |
+| 4 | 3 | Added exact newline examples, direct-text and encoded HTML fixtures, and concrete discovery and rejection cases. |
+| 5 | 2 | Fixed the broken representation link and removed draft-editing residue from the normative document. |
+
+#### Last LLM spec review
+
+Model: OpenAI Codex (GPT-6). Review instruction for round 5:
+“Check the revised YAML specification for broken references and stale editorial
+material before handing it to the next reviewer.”
+
+1. Markdown-to-HTML rule 8 uses escaped square brackets, so the reference to
+   the representation rules displays as text. Link it to the section heading.
+2. The opening separator and the closing change notes are editing residue.
+   The notes describe an earlier compression pass and say that no contradictions
+   were resolved, which no longer describes this revision. Remove them from
+   the normative document.
+
+Both findings were addressed. The Base64 fallback for text that cannot safely
+be emitted verbatim is a team design choice inherited in part from the draft.
+The course example establishes the direct-text form; it does not prescribe
+this fallback. Editor and converter implementation tests belong to the
+implementation review.
+
+<p><br></p>
+
 ### Ali
 
 #### Contributions
@@ -178,22 +218,6 @@ Lorem ipsum
 Lorem ipsum
 
 <br><!-- ================================ -->
-
-### Aiym
-
-#### Contributions
-
-Lorem ipsum
-
-#### Spec review rounds
-
-Lorem ipsum
-
-#### Last LLM spec review
-
-Lorem ipsum
-
-<p><br></p>
 
 ### Daulet
 
