@@ -31,6 +31,7 @@ use std::{
 };
 
 // ### Third-party
+use html5ever::{Namespace, ns};
 use indoc::{formatdoc, indoc};
 use markup5ever_rcdom::{Node, NodeData};
 use predicates::prelude::predicate::str;
@@ -40,7 +41,8 @@ use regex::Regex;
 // ### Local
 use super::{
     AMMONIA_OPTIONS, CLEAN_FRAGMENT_HTML, CLEAN_LINK_CONTENT_HTML, CodeChatForWeb, CodeMirror,
-    CodeMirrorDocBlock, SourceFileMetadata, StringDiff, find_path_to_toc,
+    CodeMirrorDocBlock, LineMap, LineStarts, SourceFileMetadata, StringDiff, find_path_to_toc,
+    get_dom_root, get_node_tag_name, minify, remove_line_number_tags, strip_line_number_tags,
 };
 use crate::{
     lexer::{
@@ -97,12 +99,36 @@ fn build_codemirror_doc_block(
     }
 }
 
+// Translate a file as `source_to_codechat_for_web` does, then delete the line
+// number tags from the result, for tests whose subject isn't line numbers.
+fn source_to_codechat_for_web_untagged(
+    // The arguments to `source_to_codechat_for_web`.
+    file_contents: &str,
+    file_path: &Path,
+    version: f64,
+    is_toc: bool,
+    cache: Option<Arc<Mutex<Cache>>>,
+    // Its result, without line number tags.
+) -> Result<CodeChatForWeb, SourceToCodeChatForWebError> {
+    let mut translation =
+        source_to_codechat_for_web(file_contents, file_path, version, is_toc, cache)?;
+    let CodeMirrorDiffable::Plain(code_mirror) = &mut translation.source else {
+        panic!("Translation produced a diff.");
+    };
+    code_mirror.doc = strip_line_number_tags(&code_mirror.doc).into_owned();
+    for doc_block in &mut code_mirror.doc_blocks {
+        doc_block.contents = strip_line_number_tags(&doc_block.contents).into_owned();
+    }
+    Ok(translation)
+}
+
 fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBlock {
     CodeDocBlock::DocBlock(DocBlock {
         indent: indent.to_string(),
         delimiter: delimiter.to_string(),
         contents: contents.to_string(),
         lines: 0,
+        contents_line_offsets: vec![],
     })
 }
 
@@ -197,7 +223,8 @@ fn test_codechat_for_web_to_source_empty_doc_block() {
         ("let a = 1;\n// \u{200b}", "let a = 1;\n// \u{200b}\n"),
     ] {
         let translation =
-            source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap();
+            source_to_codechat_for_web_untagged(source, Path::new("foo.js"), 0.0, false, None)
+                .unwrap();
         println!("{translation:#?}");
         assert_eq!(codechat_for_web_to_source(&translation).unwrap(), saved);
     }
@@ -617,7 +644,7 @@ fn test_source_to_codechat_for_web_1() {
     // A file with an unknown extension and no lexer, which is classified as a
     // text file.
     assert_eq!(
-        source_to_codechat_for_web("", Path::new("foo.xxx"), 0.0, false, None),
+        source_to_codechat_for_web_untagged("", Path::new("foo.xxx"), 0.0, false, None),
         Err(SourceToCodeChatForWebError::NoLexer)
     );
 
@@ -625,7 +652,7 @@ fn test_source_to_codechat_for_web_1() {
     // file can be successfully lexed by the CodeChat editor.
     let lexer_spec = format!("{}{}", "CodeChat Editor ", "lexer: ");
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             &format!("{lexer_spec}unknown"),
             Path::new("foo.xxx"),
             0.0,
@@ -639,13 +666,13 @@ fn test_source_to_codechat_for_web_1() {
 
     // A CodeChat Editor document via filename.
     assert_eq!(
-        source_to_codechat_for_web("", Path::new("foo.md"), 0.0, false, None),
+        source_to_codechat_for_web_untagged("", Path::new("foo.md"), 0.0, false, None),
         Ok(build_codechat_for_web(MARKDOWN_MODE, "", vec![]))
     );
 
     // A CodeChat Editor document via lexer specification.
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             &format!("{lexer_spec}markdown"),
             Path::new("foo.xxx"),
             0.0,
@@ -661,19 +688,19 @@ fn test_source_to_codechat_for_web_1() {
 
     // An empty source file.
     assert_eq!(
-        source_to_codechat_for_web("", Path::new("foo.js"), 0.0, false, None),
+        source_to_codechat_for_web_untagged("", Path::new("foo.js"), 0.0, false, None),
         Ok(build_codechat_for_web("javascript", "", vec![]))
     );
 
     // A zero doc block source file.
     assert_eq!(
-        source_to_codechat_for_web("let a = 1;", Path::new("foo.js"), 0.0, false, None),
+        source_to_codechat_for_web_untagged("let a = 1;", Path::new("foo.js"), 0.0, false, None),
         Ok(build_codechat_for_web("javascript", "let a = 1;", vec![]))
     );
 
     // One doc block source files.
     assert_eq!(
-        source_to_codechat_for_web("// Test", Path::new("foo.js"), 0.0, false, None),
+        source_to_codechat_for_web_untagged("// Test", Path::new("foo.js"), 0.0, false, None),
         Ok(build_codechat_for_web(
             "javascript",
             "\n",
@@ -681,7 +708,13 @@ fn test_source_to_codechat_for_web_1() {
         ))
     );
     assert_eq!(
-        source_to_codechat_for_web("let a = 1;\n// Test", Path::new("foo.js"), 0.0, false, None),
+        source_to_codechat_for_web_untagged(
+            "let a = 1;\n// Test",
+            Path::new("foo.js"),
+            0.0,
+            false,
+            None
+        ),
         Ok(build_codechat_for_web(
             "javascript",
             "let a = 1;\n\n",
@@ -689,7 +722,13 @@ fn test_source_to_codechat_for_web_1() {
         ))
     );
     assert_eq!(
-        source_to_codechat_for_web("// Test\nlet a = 1;", Path::new("foo.js"), 0.0, false, None),
+        source_to_codechat_for_web_untagged(
+            "// Test\nlet a = 1;",
+            Path::new("foo.js"),
+            0.0,
+            false,
+            None
+        ),
         Ok(build_codechat_for_web(
             "javascript",
             "\nlet a = 1;",
@@ -700,7 +739,7 @@ fn test_source_to_codechat_for_web_1() {
     // A two doc block source file. This also tests references in one block to a
     // target in another block.
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             "// [Link][1]\nlet a = 1;\n/* [1]: http://b.org */",
             Path::new("foo.js"),
             0.0,
@@ -723,7 +762,13 @@ fn test_source_to_codechat_for_web_1() {
     // * A doc block in the middle of the file
     // * A doc block with no trailing newline at the end of the file.
     assert_eq!(
-        source_to_codechat_for_web("//\n\n//\n\n//", Path::new("foo.cpp"), 0.0, false, None),
+        source_to_codechat_for_web_untagged(
+            "//\n\n//\n\n//",
+            Path::new("foo.cpp"),
+            0.0,
+            false,
+            None
+        ),
         Ok(build_codechat_for_web(
             "cpp",
             "\n\n\n\n",
@@ -735,7 +780,13 @@ fn test_source_to_codechat_for_web_1() {
         ))
     );
     assert_eq!(
-        source_to_codechat_for_web("// ~~~\n\n//\n\n//", Path::new("foo.cpp"), 0.0, false, None),
+        source_to_codechat_for_web_untagged(
+            "// ~~~\n\n//\n\n//",
+            Path::new("foo.cpp"),
+            0.0,
+            false,
+            None
+        ),
         Ok(build_codechat_for_web(
             "cpp",
             "\n\n\n\n",
@@ -758,7 +809,13 @@ fn test_source_to_codechat_for_web_1() {
     // These are taken from the
     // [MDN UTF-16 docs](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String#utf-16_characters_unicode_code_points_and_grapheme_clusters).
     assert_eq!(
-        source_to_codechat_for_web("; // σ😄👉🏿👨‍👦🇺🇳\n//", Path::new("foo.cpp"), 0.0, false, None),
+        source_to_codechat_for_web_untagged(
+            "; // σ😄👉🏿👨‍👦🇺🇳\n//",
+            Path::new("foo.cpp"),
+            0.0,
+            false,
+            None
+        ),
         Ok(build_codechat_for_web(
             "cpp",
             "; // σ😄👉🏿👨‍👦🇺🇳\n",
@@ -768,7 +825,13 @@ fn test_source_to_codechat_for_web_1() {
 
     // Test Unicode characters and multi-byte Unicode characters in strings.
     assert_eq!(
-        source_to_codechat_for_web("\"σ😄👉🏿👨‍👦🇺🇳\";\n//", Path::new("foo.cpp"), 0.0, false, None),
+        source_to_codechat_for_web_untagged(
+            "\"σ😄👉🏿👨‍👦🇺🇳\";\n//",
+            Path::new("foo.cpp"),
+            0.0,
+            false,
+            None
+        ),
         Ok(build_codechat_for_web(
             "cpp",
             "\"σ😄👉🏿👨‍👦🇺🇳\";\n",
@@ -778,7 +841,13 @@ fn test_source_to_codechat_for_web_1() {
 
     // Test Unicode characters and multi-byte Unicode characters in comments.
     assert_eq!(
-        source_to_codechat_for_web("// σ😄👉🏿👨‍👦🇺🇳\n;", Path::new("foo.cpp"), 0.0, false, None),
+        source_to_codechat_for_web_untagged(
+            "// σ😄👉🏿👨‍👦🇺🇳\n;",
+            Path::new("foo.cpp"),
+            0.0,
+            false,
+            None
+        ),
         Ok(build_codechat_for_web(
             "cpp",
             "\n;",
@@ -789,7 +858,7 @@ fn test_source_to_codechat_for_web_1() {
     // Test a fenced code block that's unterminated. See
     // [fence mending](#fence-mending).
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             "/* ``` foo\n*/\n// Test",
             Path::new("foo.cpp"),
             0.0,
@@ -813,7 +882,7 @@ fn test_source_to_codechat_for_web_1() {
     );
     // Test the other code fence character (the tilde).
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             "/* ~~~~~~~ foo\n*/\n// Test",
             Path::new("foo.cpp"),
             0.0,
@@ -837,7 +906,13 @@ fn test_source_to_codechat_for_web_1() {
     );
     // Test multiple unterminated fenced code blocks.
     assert_eq!(
-        source_to_codechat_for_web("// ```\n // ~~~", Path::new("foo.cpp"), 0.0, false, None),
+        source_to_codechat_for_web_untagged(
+            "// ```\n // ~~~",
+            Path::new("foo.cpp"),
+            0.0,
+            false,
+            None
+        ),
         Ok(build_codechat_for_web(
             "cpp",
             "\n\n",
@@ -850,7 +925,7 @@ fn test_source_to_codechat_for_web_1() {
 
     // Test an unterminated HTML block.
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             "// <strong>\n // Test",
             Path::new("foo.cpp"),
             0.0,
@@ -871,7 +946,7 @@ fn test_source_to_codechat_for_web_1() {
     // still parsed. Ammonia closes the unterminated `<pre>`, dropping the
     // trailing newline.
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             "// <pre>\n // *Test*",
             Path::new("foo.cpp"),
             0.0,
@@ -891,7 +966,7 @@ fn test_source_to_codechat_for_web_1() {
     // Test that minify functions correctly across multiple paragraphs separated
     // by a code block.
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             indoc!(
                 "
                 // One
@@ -919,7 +994,7 @@ fn test_source_to_codechat_for_web_1() {
     // Test that minify functions correctly across multiple paragraphs separated
     // by a code block.
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             indoc!(
                 r#"
                 // <a id="one"></a>1
@@ -940,6 +1015,48 @@ fn test_source_to_codechat_for_web_1() {
                 "//",
                 r"<p><a id=one></a>1"
             ),]
+        ))
+    );
+}
+
+// A doc block occupies one CodeMirror line per source line, including
+// delimiter-only lines, so later blocks keep their IDE line numbers; see
+// <xref ref="cc-dl60mkSR4A"></xref>. JavaScript uses the regex lexer; C uses
+// the Pest parser.
+#[test]
+fn test_source_to_codechat_for_web_delimiter_lines() {
+    assert_eq!(
+        source_to_codechat_for_web(
+            "/*\n   Block text.\n */\nlet a = 1;\n// After.\n",
+            Path::new("foo.js"),
+            0.0,
+            false,
+            None
+        ),
+        Ok(build_codechat_for_web(
+            "javascript",
+            "\n\n\nlet a = 1;\n\n",
+            vec![
+                build_codemirror_doc_block(0, 3, "", "/*", "<p><l-n>2</l-n>Block text."),
+                build_codemirror_doc_block(14, 15, "", "//", "<p><l-n>5</l-n>After."),
+            ]
+        ))
+    );
+    assert_eq!(
+        source_to_codechat_for_web(
+            "int x;\n/*\n   Block text.\n */\nint y;\n// After.\n",
+            Path::new("foo.c"),
+            0.0,
+            false,
+            None
+        ),
+        Ok(build_codechat_for_web(
+            "cpp",
+            "int x;\n\n\n\nint y;\n\n",
+            vec![
+                build_codemirror_doc_block(7, 10, "", "/*", "<p><l-n>3</l-n>Block text."),
+                build_codemirror_doc_block(17, 18, "", "//", "<p><l-n>6</l-n>After."),
+            ]
         ))
     );
 }
@@ -1706,7 +1823,7 @@ fn check_empty_block_round_trip(case: &EmptyBlockCase) -> Option<String> {
         );
     };
     let markdown = &doc_block.contents;
-    let html = markdown_to_html(markdown);
+    let html = markdown_to_html(markdown, None, Path::new("test.md"));
     // Print both stages before reporting, so that a run shows the whole round
     // trip for every case, not just the ones which failed.
     println!(
@@ -1795,13 +1912,17 @@ fn test_hydrate_html_1() {
     // user provides) instead of dry -> wet HTML.
     assert_eq!(
         hydrate_html(
-            &markdown_to_html(indoc!(
-                "```mermaid
+            &markdown_to_html(
+                indoc!(
+                    "```mermaid
             flowchart LR
                 start --> stop
             ```
             "
-            )),
+                ),
+                None,
+                Path::new("foo.md"),
+            ),
             Path::new("foo.md"),
             &Arc::new(Mutex::new(Cache::default()))
         )
@@ -1817,14 +1938,18 @@ fn test_hydrate_html_1() {
 
     assert_eq!(
         hydrate_html(
-            &markdown_to_html(indoc!(
-                "```graphviz
+            &markdown_to_html(
+                indoc!(
+                    "```graphviz
             digraph {
                 start -> stop
             }
             ```
             "
-            )),
+                ),
+                None,
+                Path::new("foo.md"),
+            ),
             Path::new("foo.md"),
             &Arc::new(Mutex::new(Cache::default()))
         )
@@ -1842,8 +1967,9 @@ fn test_hydrate_html_1() {
     // Ensure math doesn't need escaping.
     assert_eq!(
         hydrate_html(
-            &markdown_to_html(indoc!(
-                "
+            &markdown_to_html(
+                indoc!(
+                    "
             ${a}_1, b_{2}$
             $a*1, b*2$
             $[a](b)$
@@ -1852,7 +1978,10 @@ fn test_hydrate_html_1() {
 
             $${a}_1, b_{2}, a*1, b*2, [a](b), 3 <a> b, a \\; b$$
             "
-            )),
+                ),
+                None,
+                Path::new("foo.md"),
+            ),
             Path::new("foo.md"),
             &Arc::new(Mutex::new(Cache::default()))
         )
@@ -1871,7 +2000,11 @@ fn test_hydrate_html_1() {
 
     assert_eq!(
         hydrate_html(
-            &markdown_to_html("1. foo\u{a0}\n2. bar \n3. baz&#32;"),
+            &markdown_to_html(
+                "1. foo\u{a0}\n2. bar \n3. baz&#32;",
+                None,
+                Path::new("foo.md")
+            ),
             Path::new("foo.md"),
             &Arc::new(Mutex::new(Cache::default()))
         )
@@ -1895,7 +2028,7 @@ fn test_hydrate_html_1() {
 #[test]
 fn test_hydrate_xref_same_file() {
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             "// <h1 id=\"a\">Title</h1>\nlet x = 1;\n// See <xref ref=\"a\"></xref>",
             Path::new("foo.js"),
             0.0,
@@ -1923,7 +2056,7 @@ fn test_hydrate_xref_same_file() {
 #[test]
 fn test_hydrate_xref_missing() {
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             "// See <xref ref=\"nope\"></xref>",
             Path::new("foo.js"),
             0.0,
@@ -1949,7 +2082,7 @@ fn test_hydrate_xref_missing() {
 #[test]
 fn test_hydrate_xref_without_ref() {
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             "// See <xref></xref>.",
             Path::new("foo.js"),
             0.0,
@@ -1977,7 +2110,7 @@ fn test_hydrate_xref_without_ref() {
 #[test]
 fn test_hydrate_xref_strips_attributes() {
     let cache = Arc::new(Mutex::new(Cache::default()));
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         "// <h1 id=\"t\">Title</h1>\nlet x = 1;\n// See <xref id=\"x\" title=\"Tip\" data-content=\"Old\" ref=\"t\"></xref> and <xref id=\"*\" ref=\"t\"></xref>.\n",
         Path::new("foo.js"),
         0.0,
@@ -2032,7 +2165,7 @@ fn test_hydrate_xref_strips_attributes() {
 #[test]
 fn test_hydrate_xref_optional_content() {
     let cache = Arc::new(Mutex::new(Cache::default()));
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         indoc!(
             r#"
             // <h1 id="t">Title</h1>
@@ -2107,7 +2240,7 @@ fn test_clean_keeps_phrasing_attributes() {
 // backlink to the gather element listing it.
 #[test]
 fn test_hydrate_target_inner_html_math() {
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         indoc!(
             r#"
             // ### The $x^2$ value {#t data-gather=f}
@@ -2140,7 +2273,7 @@ fn test_hydrate_target_inner_html_math() {
 #[test]
 fn test_hydrate_unclosed_tag() {
     let translate = |source: &str| {
-        source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap()
+        source_to_codechat_for_web_untagged(source, Path::new("foo.js"), 0.0, false, None).unwrap()
     };
     for (unclosed_tag, saved_doc_block) in [
         ("<xref ref=\"t\">", "// <xref ref=\"t\"> </xref>"),
@@ -2195,7 +2328,7 @@ fn test_hydrate_unclosed_tag_keeps_prose() {
         ),
         ("<table>", "// **Important** prose.\n//\n// <table></table>"),
     ] {
-        let translation = source_to_codechat_for_web(
+        let translation = source_to_codechat_for_web_untagged(
             &format!("// {unclosed_tag}\n//\n// **Important** prose.\nlet a = 1;\n"),
             Path::new("foo.js"),
             0.0,
@@ -2245,7 +2378,13 @@ fn test_hydrate_unclosed_tag_hides_text() {
             ("foo.md", format!("{unclosed_tag}\n\nImportant prose.\n")),
         ] {
             assert_eq!(
-                source_to_codechat_for_web(&source, Path::new(file_name), 0.0, false, None),
+                source_to_codechat_for_web_untagged(
+                    &source,
+                    Path::new(file_name),
+                    0.0,
+                    false,
+                    None
+                ),
                 Err(SourceToCodeChatForWebError::ParseFailed(
                     "because an unclosed tag hides the text after it".to_string()
                 )),
@@ -2273,7 +2412,7 @@ fn test_hydrate_unclosed_tag_keeps_cache() {
         ),
     ] {
         let cache = Arc::new(Mutex::new(Cache::default()));
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             source,
             Path::new(file_name),
             0.0,
@@ -2281,7 +2420,7 @@ fn test_hydrate_unclosed_tag_keeps_cache() {
             Some(cache.clone()),
         )
         .unwrap();
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             unclosed_source,
             Path::new(file_name),
             0.0,
@@ -2354,8 +2493,14 @@ fn test_hydrate_fragment_content() {
     ] {
         let save = |source: &str| {
             codechat_for_web_to_source(
-                &source_to_codechat_for_web(source, Path::new(file_name), 0.0, false, None)
-                    .unwrap(),
+                &source_to_codechat_for_web_untagged(
+                    source,
+                    Path::new(file_name),
+                    0.0,
+                    false,
+                    None,
+                )
+                .unwrap(),
             )
             .unwrap()
         };
@@ -2369,7 +2514,7 @@ fn test_hydrate_fragment_content() {
 // error instead.
 #[test]
 fn test_hydrate_fragment_content_target() {
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         "// <fragment id=\"f\"><b id=\"t\">Title</b></fragment> <xref ref=\"t\"></xref>\nlet a = 1;\n",
         Path::new("foo.js"),
         0.0,
@@ -2394,7 +2539,7 @@ fn test_hydrate_fragment_content_target() {
 // front of it, leaving this doc block empty.
 #[test]
 fn test_hydrate_unclosed_table() {
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         "// <table>\n// <tr><td>x</td></tr>\nlet a = 1;\n// Later.\nlet b = 2;\n",
         Path::new("foo.js"),
         0.0,
@@ -2417,7 +2562,7 @@ fn test_hydrate_unclosed_table() {
 // absorbed would leave the cache, and the link below would be an error instead.
 #[test]
 fn test_hydrate_unclosed_xref_later_target() {
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         "// <xref ref=\"t\">\nlet a = 1;\n// <h3 id=\"t\">Title</h3>\nlet b = 2;\n",
         Path::new("foo.js"),
         0.0,
@@ -2444,7 +2589,7 @@ fn test_hydrate_hidden_separator() {
     let long_fence = "`".repeat(24);
     let source = format!("// {long_fence}\nlet a = 1;\n// Next.\nlet b = 2;\n");
     assert_eq!(
-        source_to_codechat_for_web(&source, Path::new("foo.js"), 0.0, false, None),
+        source_to_codechat_for_web_untagged(&source, Path::new("foo.js"), 0.0, false, None),
         Err(SourceToCodeChatForWebError::ParseFailed(
             "because an unclosed code block hides later doc blocks".to_string()
         ))
@@ -2457,7 +2602,7 @@ fn test_hydrate_hidden_separator() {
 #[test]
 fn test_hydrate_hidden_separator_keeps_cache() {
     let cache = Arc::new(Mutex::new(Cache::default()));
-    source_to_codechat_for_web(
+    source_to_codechat_for_web_untagged(
         "// Intro.\nlet a = 1;\n// <h3 id=\"t\">Title</h3>\nlet b = 2;\n",
         Path::new("foo.js"),
         0.0,
@@ -2466,7 +2611,7 @@ fn test_hydrate_hidden_separator_keeps_cache() {
     )
     .unwrap();
     let long_fence = "`".repeat(24);
-    source_to_codechat_for_web(
+    source_to_codechat_for_web_untagged(
         &format!("// {long_fence}\nlet a = 1;\n// <h3 id=\"t\">Title</h3>\nlet b = 2;\n"),
         Path::new("foo.js"),
         0.0,
@@ -2481,7 +2626,7 @@ fn test_hydrate_hidden_separator_keeps_cache() {
 // covers the rest of the file, instead of overflowing.
 #[test]
 fn test_hydrate_fragment_following_overflow() {
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         &formatdoc!(
             r#"
             // <h3 id="gath" data-gather="frag">Gathered</h3>
@@ -2513,7 +2658,7 @@ fn test_hydrate_fragment_following_overflow() {
 fn test_hydrate_markdown_leading_comment() {
     let source = "<!-- c -->\n\nHeading\n=======\n";
     let translation =
-        source_to_codechat_for_web(source, Path::new("foo.md"), 0.0, false, None).unwrap();
+        source_to_codechat_for_web_untagged(source, Path::new("foo.md"), 0.0, false, None).unwrap();
     assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
     let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
         panic!("No diff!");
@@ -2528,7 +2673,7 @@ fn test_hydrate_markdown_leading_comment() {
 fn test_hydrate_xref_content_not_editable() {
     let source = "// <h1 id=\"t\">Title</h1>\nlet x = 1;\n// <xref ref=\"t\"><span contenteditable=\"true\">x</span></xref>\n";
     let translation =
-        source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap();
+        source_to_codechat_for_web_untagged(source, Path::new("foo.js"), 0.0, false, None).unwrap();
     assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
     let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
         panic!("No diff!");
@@ -2554,13 +2699,13 @@ fn test_xref_optional_content_round_trip() {
         "#
     );
     let translation =
-        source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap();
+        source_to_codechat_for_web_untagged(source, Path::new("foo.js"), 0.0, false, None).unwrap();
     assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
 
     // A Markdown document reaches dehydration by a separate path.
     let source = "<h1 id=\"t\">Title</h1>\n\nSee <xref ref=\"t\">the *title*</xref> and <xref ref=\"t\"></xref>.\n";
     let translation =
-        source_to_codechat_for_web(source, Path::new("foo.md"), 0.0, false, None).unwrap();
+        source_to_codechat_for_web_untagged(source, Path::new("foo.md"), 0.0, false, None).unwrap();
     assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
 }
 
@@ -2580,7 +2725,7 @@ fn test_hydrate_xref_error_keeps_optional_content() {
         "#
     );
     let translation =
-        source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap();
+        source_to_codechat_for_web_untagged(source, Path::new("foo.js"), 0.0, false, None).unwrap();
     assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
     let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
         panic!("No diff!");
@@ -2604,7 +2749,7 @@ fn test_hydrate_xref_error_keeps_optional_content() {
 // fragment receives a backlink to the gather element.
 #[test]
 fn test_hydrate_gather_same_file() {
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         "// <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>\nlet a = 1;\n// <fragment id=\"frag\"></fragment>Doc.\nlet b = 2;\n// End.",
         Path::new("foo.js"),
         0.0,
@@ -2652,7 +2797,7 @@ fn test_hydrate_gather_contenteditable() {
         "#
     );
     let translation =
-        source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap();
+        source_to_codechat_for_web_untagged(source, Path::new("foo.js"), 0.0, false, None).unwrap();
     assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
     let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
         panic!("No diff!");
@@ -2672,7 +2817,7 @@ fn test_hydrate_gather_contenteditable() {
 // first line of each doc block are preceded by their line numbers in the source.
 #[test]
 fn test_hydrate_gather_indent_and_line_numbers() {
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         indoc!(
             r#"
             // <h3 id="gath" data-gather="frag">Gathered</h3>
@@ -2732,7 +2877,7 @@ fn test_hydrate_xref_cross_file() {
     let cache = Arc::new(Mutex::new(Cache::default()));
 
     // Define the target in one file...
-    source_to_codechat_for_web(
+    source_to_codechat_for_web_untagged(
         "// <h1 id=\"t\">Title</h1>",
         Path::new("a.js"),
         0.0,
@@ -2742,7 +2887,7 @@ fn test_hydrate_xref_cross_file() {
     .unwrap();
     // ...and reference it from another.
     let reference = "// See <xref ref=\"t\"></xref>";
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         reference,
         Path::new("b.js"),
         0.0,
@@ -2760,7 +2905,7 @@ fn test_hydrate_xref_cross_file() {
 
     // Change the target's inner HTML, then reprocess the referencing file: the
     // link text must update.
-    source_to_codechat_for_web(
+    source_to_codechat_for_web_untagged(
         "// <h1 id=\"t\">New title</h1>",
         Path::new("a.js"),
         0.0,
@@ -2769,7 +2914,8 @@ fn test_hydrate_xref_cross_file() {
     )
     .unwrap();
     let translation =
-        source_to_codechat_for_web(reference, Path::new("b.js"), 0.0, false, Some(cache)).unwrap();
+        source_to_codechat_for_web_untagged(reference, Path::new("b.js"), 0.0, false, Some(cache))
+            .unwrap();
     let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
         panic!("No diff!");
     };
@@ -2788,7 +2934,7 @@ fn test_hydrate_xref_cross_file() {
 #[test]
 fn test_hydrate_gathered_xref() {
     let cache = Arc::new(Mutex::new(Cache::default()));
-    source_to_codechat_for_web(
+    source_to_codechat_for_web_untagged(
         "// <h1 id=\"t\">Title</h1>\nlet a = 1;\n// <fragment id=\"frag\"></fragment>See <xref ref=\"t\"></xref>, <xref ref=\"t\">the title</xref>, and <xref ref=\"nope\"></xref>.\nlet b = 2;",
         Path::new("b.js"),
         0.0,
@@ -2796,7 +2942,7 @@ fn test_hydrate_gathered_xref() {
         Some(cache.clone()),
     )
     .unwrap();
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         "// <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>",
         Path::new("sub/a.js"),
         0.0,
@@ -2832,7 +2978,7 @@ fn test_hydrate_gathered_xref() {
 #[test]
 fn test_hydrate_gathered_xref_markup() {
     let cache = Arc::new(Mutex::new(Cache::default()));
-    source_to_codechat_for_web(
+    source_to_codechat_for_web_untagged(
         "// <h1 id=\"t\">Title</h1>\nlet a = 1;\n// <fragment id=\"frag\"></fragment><xref ref=\"t\">*the* $x^2$</xref>\nlet b = 2;",
         Path::new("b.js"),
         0.0,
@@ -2840,7 +2986,7 @@ fn test_hydrate_gathered_xref_markup() {
         Some(cache.clone()),
     )
     .unwrap();
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         "// <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>",
         Path::new("sub/a.js"),
         0.0,
@@ -2876,8 +3022,14 @@ fn test_hydrate_gathered_xref_markup() {
 fn test_duplicate_fragment_in_one_file() {
     let cache = Arc::new(Mutex::new(Cache::default()));
     let translate = |source: &str, path: &str| {
-        source_to_codechat_for_web(source, Path::new(path), 0.0, false, Some(cache.clone()))
-            .unwrap();
+        source_to_codechat_for_web_untagged(
+            source,
+            Path::new(path),
+            0.0,
+            false,
+            Some(cache.clone()),
+        )
+        .unwrap();
     };
     let gathering = "// <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>";
     let fragments = "// <fragment id=\"frag\"></fragment>First.\nlet a = 1;\n// <fragment id=\"frag\"></fragment>Second.\nlet b = 2;";
@@ -2898,7 +3050,7 @@ fn test_duplicate_fragment_in_one_file() {
 #[test]
 fn test_hydrate_fragment_in_markdown() {
     assert_eq!(
-        source_to_codechat_for_web(
+        source_to_codechat_for_web_untagged(
             "<fragment id=\"f\"></fragment>",
             Path::new("foo.md"),
             0.0,
@@ -2926,7 +3078,7 @@ fn test_hydrate_fragment_without_id() {
     // it and saving can't restore it.
     for fragment in ["<fragment></fragment>", "<fragment id=\"\"></fragment>"] {
         let cache = Arc::new(Mutex::new(Cache::default()));
-        let translation = source_to_codechat_for_web(
+        let translation = source_to_codechat_for_web_untagged(
             &format!("# {fragment}Doc.\nx = 1\n"),
             Path::new("foo.py"),
             0.0,
@@ -2975,7 +3127,7 @@ fn test_hydrate_fragment_without_id() {
 #[test]
 fn test_auto_assign_id() {
     let cache = Arc::new(Mutex::new(Cache::default()));
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         "// <h1 id=\"*\">Title</h1>",
         Path::new("a.js"),
         0.0,
@@ -3001,7 +3153,7 @@ fn test_auto_assign_id() {
 
     // Saving the file writes the generated id to disk; processing what was
     // written records it, so cross-references to it now resolve.
-    source_to_codechat_for_web(
+    source_to_codechat_for_web_untagged(
         &format!("// <h1 id=\"{id}\">Title</h1>"),
         Path::new("a.js"),
         0.0,
@@ -3009,7 +3161,7 @@ fn test_auto_assign_id() {
         Some(cache.clone()),
     )
     .unwrap();
-    let translation = source_to_codechat_for_web(
+    let translation = source_to_codechat_for_web_untagged(
         &format!("// See <xref ref=\"{id}\"></xref>"),
         Path::new("b.js"),
         0.0,
@@ -3095,6 +3247,7 @@ fn test_dehydrate_named_anchor() {
 
 fn dehydrate_html(html: &str) -> io::Result<Rc<Node>> {
     let tree = html_to_dom(html, None)?;
+    remove_line_number_tags(&tree);
     dehydrating_walk_node(&tree)?;
     Ok(tree)
 }
@@ -3256,4 +3409,840 @@ fn test_dehydrate_html_1() {
             "
         )
     );
+}
+
+// ### Line number tag removal and sanitization tests
+//
+// These use hand-written tagged HTML, as the Server would produce per
+// <xref ref="cc-e7tpKZV9sK"></xref>, or as TinyMCE could leave behind after a
+// paste.
+
+/// Return the Markdown produced by dehydrating `html`.
+fn dehydrated_markdown(html: &str) -> String {
+    let html_to_markdown = new_html_to_markdown();
+    HtmlToMarkdownWrapped::new(&html_to_markdown)
+        .convert(&dehydrate_html(html).unwrap())
+        .unwrap()
+}
+
+/// Return the namespace of each `<l-n>` element in `node`, including inside
+/// `<template>` contents.
+fn line_number_tag_namespaces(node: &Rc<Node>) -> Vec<Namespace> {
+    let mut namespaces = vec![];
+    if let NodeData::Element {
+        name,
+        template_contents,
+        ..
+    } = &node.data
+    {
+        if &*name.local == "l-n" {
+            namespaces.push(name.ns.clone());
+        }
+        if let Some(contents) = template_contents.borrow().as_ref() {
+            namespaces.extend(line_number_tag_namespaces(contents));
+        }
+    }
+    for child in node.children.borrow().iter() {
+        namespaces.extend(line_number_tag_namespaces(child));
+    }
+    namespaces
+}
+
+#[test]
+fn test_strip_line_number_tags() {
+    assert_eq!(
+        strip_line_number_tags("<h1><l-n>1</l-n>Title</h1><p><l-n>3</l-n>a <l-n>14</l-n>b"),
+        "<h1>Title</h1><p>a b"
+    );
+    // Only well-formed tags are removed.
+    assert_eq!(
+        strip_line_number_tags("<p><l-n></l-n>a<l-n>x</l-n>"),
+        "<p><l-n></l-n>a<l-n>x</l-n>"
+    );
+    assert_eq!(strip_line_number_tags("<p>no tags"), "<p>no tags");
+}
+
+#[test]
+fn test_line_number_tags_sanitize() {
+    // `minify` (through `AMMONIA_OPTIONS`) keeps each tag and collapses the
+    // whitespace next to it to one space.
+    assert_eq!(
+        minify("<p>a <em>b</em>\n<l-n>2</l-n>c</p>").unwrap(),
+        "<p>a <em>b</em> <l-n>2</l-n>c"
+    );
+    assert_eq!(
+        AMMONIA_OPTIONS.clean("<p><l-n>2</l-n>a</p>").to_string(),
+        "<p><l-n>2</l-n>a</p>"
+    );
+    // Stored target and fragment content holds no tags or their digits.
+    assert_eq!(
+        CLEAN_LINK_CONTENT_HTML
+            .clean("a\n<l-n>2</l-n>b <em><l-n>3</l-n>c</em>")
+            .to_string(),
+        "a\nb <em>c</em>"
+    );
+    assert_eq!(
+        CLEAN_FRAGMENT_HTML
+            .clean("<p>a\n<l-n>2</l-n>b</p>")
+            .to_string(),
+        "<p>a\nb</p>"
+    );
+}
+
+// Removing a tag merges the text on either side of it into one node.
+#[test]
+fn test_remove_line_number_tags_merges_text() {
+    let tree = html_to_dom("<p>a\n<l-n>2</l-n>b <l-n>3</l-n>c<l-n>4</l-n></p>", None).unwrap();
+    remove_line_number_tags(&tree);
+    let p = get_dom_root(&tree).children.borrow()[0].clone();
+    let p_children = p.children.borrow();
+    assert_eq!(p_children.len(), 1);
+    let NodeData::Text { contents } = &p_children[0].data else {
+        panic!("Expected a text node.");
+    };
+    assert_eq!(&**contents.borrow(), "a\nb c");
+}
+
+// Markdown from tagged HTML equals Markdown from the same HTML with its tags
+// deleted, including for text after a removed tag which Markdown would treat
+// as syntax at the start of a line.
+#[test]
+fn test_remove_line_number_tags_markdown() {
+    // Long enough that the word wrapper places the text after the tag at the
+    // start of a line.
+    let filler = "word ".repeat(15);
+    for (tagged, untagged) in [
+        // Text after a tag which looks like Markdown syntax.
+        (
+            format!("<p><l-n>1</l-n>{filler}\n<l-n>2</l-n>2) b</p>"),
+            format!("<p>{filler}\n2) b</p>"),
+        ),
+        (
+            format!("<p><l-n>1</l-n>{filler}\n<l-n>2</l-n># b</p>"),
+            format!("<p>{filler}\n# b</p>"),
+        ),
+        (
+            format!("<p><l-n>1</l-n>{filler}\n<l-n>2</l-n>+ b</p>"),
+            format!("<p>{filler}\n+ b</p>"),
+        ),
+        (
+            format!("<p><l-n>1</l-n>{filler}\n<l-n>2</l-n>&gt; b</p>"),
+            format!("<p>{filler}\n&gt; b</p>"),
+        ),
+        (
+            format!("<p><l-n>1</l-n>{filler}\n<l-n>2</l-n>    b</p>"),
+            format!("<p>{filler}\n    b</p>"),
+        ),
+        (
+            "<p>a<l-n>2</l-n>2) b</p>".to_string(),
+            "<p>a2) b</p>".to_string(),
+        ),
+        // Break whitespace stays outside the tag.
+        (
+            "<p><l-n>1</l-n>a <em>b</em>\n<l-n>2</l-n>c<br>\n<l-n>3</l-n>d</p>".to_string(),
+            "<p>a <em>b</em>\nc<br>\nd</p>".to_string(),
+        ),
+        (
+            "<h1><l-n>1</l-n>Title</h1><ul><li><l-n>3</l-n><input disabled type=checkbox>A task</li></ul>".to_string(),
+            "<h1>Title</h1><ul><li><input disabled type=checkbox>A task</li></ul>".to_string(),
+        ),
+        // Malformed, out-of-order, duplicated, and pasted tags.
+        (
+            "<p><l-n>5</l-n>a <l-n>2</l-n>b <l-n>2</l-n>c <l-n>x</l-n>d <l-n></l-n>e <l-n><b>7</b></l-n>f</p>".to_string(),
+            "<p>a b c d e f</p>".to_string(),
+        ),
+        // A stray tag inside an element which `dehydrating_walk_node` replaces
+        // must not prevent the replacement.
+        (
+            "<wc-mermaid>flowchart LR\n<l-n>2</l-n>    start --&gt; stop\n</wc-mermaid>".to_string(),
+            "<wc-mermaid>flowchart LR\n    start --&gt; stop\n</wc-mermaid>".to_string(),
+        ),
+        (
+            "<graphviz-graph>digraph {\n<l-n>2</l-n>    start -&gt; stop\n}\n</graphviz-graph>".to_string(),
+            "<graphviz-graph>digraph {\n    start -&gt; stop\n}\n</graphviz-graph>".to_string(),
+        ),
+        (
+            "<pre><code class=\"language-text\">a<br><l-n>2</l-n>b<br></code></pre>".to_string(),
+            "<pre><code class=\"language-text\">a<br>b<br></code></pre>".to_string(),
+        ),
+        (
+            "<p><l-n>1</l-n>x <span class=\"math math-inline mceNonEditable\" contenteditable=\"false\">\\(a\n<l-n>2</l-n>b\\)</span></p>".to_string(),
+            "<p>x <span class=\"math math-inline mceNonEditable\" contenteditable=\"false\">\\(a\nb\\)</span></p>".to_string(),
+        ),
+        (
+            "<p><span class=\"math math-display mceNonEditable\" contenteditable=\"false\">$$a\n<l-n>2</l-n>b$$</span></p>".to_string(),
+            "<p><span class=\"math math-display mceNonEditable\" contenteditable=\"false\">$$a\nb$$</span></p>".to_string(),
+        ),
+    ] {
+        let tagged_markdown = dehydrated_markdown(&tagged);
+        assert_eq!(tagged_markdown, dehydrated_markdown(&untagged), "{tagged}");
+        assert!(!tagged_markdown.contains("l-n"), "{tagged_markdown}");
+    }
+
+    // Spot-check that the replacements above happened.
+    assert_eq!(
+        dehydrated_markdown(
+            "<wc-mermaid>flowchart LR\n<l-n>2</l-n>    start --&gt; stop\n</wc-mermaid>"
+        ),
+        "```mermaid\nflowchart LR\n    start --> stop\n```\n"
+    );
+    assert_eq!(
+        dehydrated_markdown(
+            "<pre><code class=\"language-text\">a<br><l-n>2</l-n>b<br></code></pre>"
+        ),
+        "```text\na\nb\n```\n"
+    );
+    assert_eq!(
+        dehydrated_markdown(
+            "<p><span class=\"math math-inline mceNonEditable\" contenteditable=\"false\">\\(a<l-n>2</l-n>b\\)</span></p>"
+        ),
+        "$ab$\n"
+    );
+}
+
+// Tags are removed in foreign (SVG and MathML) content and in `<template>`
+// contents.
+#[test]
+fn test_remove_line_number_tags_foreign_and_template() {
+    let tree = html_to_dom(
+        "<p><l-n>1</l-n>a</p><svg><l-n>2</l-n><text>t</text></svg><math><mi>x</mi><l-n>3</l-n></math><template><p>b\n<l-n>4</l-n>c</p></template>",
+        None,
+    )
+    .unwrap();
+    // Verify that the parser placed these tags where this test expects.
+    assert_eq!(
+        line_number_tag_namespaces(&tree),
+        vec![ns!(html), ns!(svg), ns!(mathml), ns!(html)]
+    );
+    remove_line_number_tags(&tree);
+    assert_eq!(line_number_tag_namespaces(&tree), Vec::<Namespace>::new());
+    // The serializer omits `<template>` contents, so check them separately.
+    assert_eq!(
+        dom_to_html(&tree).unwrap(),
+        "<p>a</p><svg><text>t</text></svg><math><mi>x</mi></math><template></template>"
+    );
+    let template = get_dom_root(&tree).children.borrow()[3].clone();
+    let NodeData::Element {
+        template_contents, ..
+    } = &template.data
+    else {
+        panic!("Expected an element.");
+    };
+    let template_p = template_contents
+        .borrow()
+        .as_ref()
+        .unwrap()
+        .children
+        .borrow()[0]
+        .clone();
+    assert_eq!(get_node_tag_name(&template_p), Some("p"));
+    let template_p_children = template_p.children.borrow();
+    assert_eq!(template_p_children.len(), 1);
+    let NodeData::Text { contents } = &template_p_children[0].data else {
+        panic!("Expected a text node.");
+    };
+    assert_eq!(&**contents.borrow(), "b\nc");
+}
+
+// When `html_to_dom` places the cursor marker inside a tag, the marker is kept
+// immediately before the text which followed the tag.
+#[test]
+fn test_remove_line_number_tags_cursor_marker() {
+    for (html, dom_location) in [
+        // The marker is inside the tag's text.
+        ("<p>a\n<l-n>2</l-n>b</p>", (vec![0, 1, 0], 0)),
+        ("<p>a\n<l-n>2</l-n>b</p>", (vec![0, 1, 0], 1)),
+        // The marker is deeper inside a pasted, malformed tag.
+        ("<p>a\n<l-n><b>2</b></l-n>b</p>", (vec![0, 1, 0, 0], 1)),
+    ] {
+        assert_eq!(
+            doc_block_html_to_markdown(vec![build_doc_block("", "", html)], Some(&dom_location))
+                .unwrap(),
+            vec![build_doc_block(
+                "",
+                "",
+                &format!("a {UNICODE_CURSOR_MARKER}b\n")
+            )],
+            "{html}"
+        );
+    }
+}
+
+// Both paths of `codechat_for_web_to_source` remove tags.
+#[test]
+fn test_codechat_for_web_to_source_line_number_tags() {
+    let codechat_for_web = build_codechat_for_web(
+        MARKDOWN_MODE,
+        "<h1><l-n>1</l-n>Title</h1><p><l-n>3</l-n>a <em>b</em>\n<l-n>4</l-n>2) c</p>",
+        vec![],
+    );
+    assert_eq!(
+        cast!(codechat_for_web_to_source(&codechat_for_web), Ok),
+        "Title\n=====\n\na *b* 2) c\n"
+    );
+
+    let codechat_for_web = build_codechat_for_web(
+        "python",
+        "\nx = 1\n",
+        vec![build_codemirror_doc_block(
+            0,
+            1,
+            "",
+            "#",
+            "<p><l-n>1</l-n>a\n<l-n>2</l-n>b</p>",
+        )],
+    );
+    assert_eq!(
+        cast!(codechat_for_web_to_source(&codechat_for_web), Ok),
+        "# a b\nx = 1\n"
+    );
+}
+
+// ### Line number tag placement tests
+//
+// These cover <xref ref="cc-dl60mkSR4A"></xref> and
+// <xref ref="cc-gpOIpo2gjZ"></xref>.
+//
+// Translate a Markdown document to HTML with line number tags, without
+// minifying it, so that tests can see whitespace and raw text exactly.
+fn tagged_html(markdown: &str) -> String {
+    markdown_to_html(markdown, Some(&LineMap::Document), Path::new("test.md"))
+}
+
+// Like `tagged_html`, but minified, which makes block structure easier to read.
+fn tagged_minified_html(markdown: &str) -> String {
+    minify(&tagged_html(markdown)).unwrap()
+}
+
+// Return the line numbers of every tag in the HTML, in document order.
+fn tag_lines(html: &str) -> Vec<usize> {
+    Regex::new("<l-n>([0-9]+)</l-n>")
+        .unwrap()
+        .captures_iter(html)
+        .map(|captures| captures[1].parse().unwrap())
+        .collect()
+}
+
+// Translate a source file, returning the HTML of each of its doc blocks.
+fn tagged_doc_blocks(source: &str, path: &str) -> Vec<String> {
+    let translation =
+        source_to_codechat_for_web(source, Path::new(path), 0.0, false, None).unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("Translation produced a diff.");
+    };
+    code_mirror
+        .doc_blocks
+        .into_iter()
+        .map(|doc_block| doc_block.contents)
+        .collect()
+}
+
+#[test]
+fn test_line_starts() {
+    // Each of LF, CRLF, and lone CR ends exactly one line.
+    let line_starts = LineStarts::new("a\nb\r\nc\rd");
+    assert_eq!(line_starts.0, vec![0, 2, 5, 7]);
+    let lines: Vec<_> = (0..8).map(|offset| line_starts.line_of(offset)).collect();
+    // The terminator belongs to the line it ends; both bytes of a CRLF do.
+    assert_eq!(lines, vec![0, 0, 1, 1, 1, 2, 2, 3]);
+
+    // Empty lines, including one after a final line ending, each have a start.
+    let line_starts = LineStarts::new("\n\r\n\r");
+    assert_eq!(line_starts.0, vec![0, 1, 3, 4]);
+    assert_eq!(line_starts.line_of(4), 3);
+
+    let line_starts = LineStarts::new("");
+    assert_eq!(line_starts.0, vec![0]);
+    assert_eq!(line_starts.line_of(0), 0);
+}
+
+#[test]
+fn test_line_map() {
+    assert_eq!(LineMap::Document.source_line(0), Some(1));
+    assert_eq!(LineMap::Document.source_line(9), Some(10));
+
+    // Two doc blocks: the first's contents begin on Markdown line 8 and come
+    // from source lines 2 and 3; the second's begin on line 18, from line 5.
+    let line_map = LineMap::Segments(vec![(8, vec![2, 3]), (18, vec![5])]);
+    let source_lines: Vec<_> = [0, 7, 8, 9, 10, 17, 18, 19]
+        .iter()
+        .map(|md_line| line_map.source_line(*md_line))
+        .collect();
+    assert_eq!(
+        source_lines,
+        // Lines before the first doc block and after each doc block's
+        // contents are separator lines.
+        vec![None, None, Some(2), Some(3), None, None, Some(5), None]
+    );
+}
+
+// The example given in <xref ref="cc-gpOIpo2gjZ"></xref>.
+#[test]
+fn test_line_number_tags_spec_example() {
+    assert_eq!(
+        tagged_minified_html("# Title\n\nSome *text*\ncontinues here.\n\n* [ ] A task\n"),
+        "<h1><l-n>1</l-n>Title</h1><p><l-n>3</l-n>Some <em>text</em> <l-n>4</l-n>continues here.<ul><li><l-n>6</l-n><input disabled type=checkbox> A task</ul>"
+    );
+}
+
+#[test]
+fn test_line_number_tags_line_endings() {
+    for (markdown, lines) in [
+        ("a\nsecond\nthird", vec![1, 2, 3]),
+        ("a\r\nsecond\r\n\r\nthird", vec![1, 2, 4]),
+        ("a\rsecond\rthird", vec![1, 2, 3]),
+        ("a\r\nsecond\r\rthird\n\nfourth", vec![1, 2, 4, 6]),
+    ] {
+        assert_eq!(tag_lines(&tagged_html(markdown)), lines, "{markdown:?}");
+    }
+}
+
+#[test]
+fn test_line_number_tags_blocks() {
+    // Setext and ATX headings.
+    assert_eq!(
+        tagged_minified_html("Setext\n======\n\n## ATX\n"),
+        "<h1><l-n>1</l-n>Setext</h1><h2><l-n>4</l-n>ATX</h2>"
+    );
+    // Tight, then loose, lists.
+    assert_eq!(
+        tag_lines(&tagged_html("* a\n* b\n\n<!-- -->\n\n1. c\n\n2. d\n")),
+        vec![1, 2, 6, 8]
+    );
+    // A block quote, with soft and hard breaks: break whitespace stays
+    // outside the tag.
+    assert_eq!(
+        tagged_html("> a\n> b\\\n> c\n"),
+        "<blockquote>\n<p><l-n>1</l-n>a\n<l-n>2</l-n>b<br />\n<l-n>3</l-n>c</p>\n</blockquote>\n"
+    );
+    // Lines beginning with emphasis, a link, inline code, and inline math.
+    assert_eq!(
+        tagged_minified_html("*a*\n[b](c)\n`d`\n$e$\n"),
+        "<p><l-n>1</l-n><em>a</em> <l-n>2</l-n><a href=c>b</a> <l-n>3</l-n><code>d</code> <l-n>4</l-n><span class=\"math math-inline\">e</span>"
+    );
+    // A table: each row's tag lands in its first non-empty cell, while the
+    // delimiter row and an all-empty row get none.
+    assert_eq!(
+        tag_lines(&tagged_html(
+            "| a | b |\n|---|---|\n|   | c |\n|   |   |\n| d |   |\n"
+        )),
+        vec![1, 3, 5]
+    );
+    // A footnote definition and a definition list.
+    assert_eq!(
+        tag_lines(&tagged_html("a[^1]\n\n[^1]: b\n\nterm\n: definition\n")),
+        vec![1, 3, 5, 6]
+    );
+}
+
+#[test]
+fn test_line_number_tags_multi_line_inline() {
+    // A code span or inline math which spans lines tags only its first line...
+    assert_eq!(tag_lines(&tagged_html("`a\nb`\n")), vec![1]);
+    assert_eq!(tag_lines(&tagged_html("$a\nb$\n")), vec![1]);
+    // ...unless new content follows it on a later line.
+    assert_eq!(
+        tagged_html("`a\nb` c\n"),
+        "<p><l-n>1</l-n><code>a b</code><l-n>2</l-n> c</p>\n"
+    );
+    // An image is tagged before it; its alt text is never tagged.
+    assert_eq!(
+        tag_lines(&tagged_html("![alt\ntext](x.png) y\n")),
+        vec![1, 2]
+    );
+    assert!(tagged_html("![alt\ntext](x.png)\n").starts_with("<p><l-n>1</l-n><img "));
+}
+
+#[test]
+fn test_line_number_tags_opaque() {
+    // Fenced code (with backticks or tildes), unterminated fences, and
+    // indented code are never tagged.
+    assert_eq!(
+        tagged_html("```\na\nb\n```\nafter\n"),
+        "<pre><code>a\nb\n</code></pre>\n<p><l-n>5</l-n>after</p>\n"
+    );
+    assert_eq!(tag_lines(&tagged_html("~~~\na\n~~~\nb\n")), vec![4]);
+    assert_eq!(tag_lines(&tagged_html("```\na\nb\n")), Vec::<usize>::new());
+    assert_eq!(tag_lines(&tagged_html("    a\n    b\n\nc\n")), vec![4]);
+    // Raw HTML blocks and front matter aren't tagged.
+    assert_eq!(
+        tagged_html("<div>\nraw\n</div>\n\ntext\n"),
+        "<div>\nraw\n</div>\n<p><l-n>5</l-n>text</p>\n"
+    );
+    assert_eq!(
+        tag_lines(&tagged_html("---\ntitle: a\n---\n\nb\n")),
+        vec![5]
+    );
+}
+
+#[test]
+fn test_line_number_tags_raw_text() {
+    // A closing tag at the start of a line isn't tagged; the text after it is.
+    assert_eq!(
+        tagged_html("x <textarea>a\n</textarea> b\n"),
+        "<p><l-n>1</l-n>x <textarea>a\n</textarea><l-n>2</l-n> b</p>\n"
+    );
+    // An element opened mid-paragraph suppresses tags across blank lines,
+    // until its closer.
+    for name in [
+        "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "noscript",
+        "template", "select",
+    ] {
+        let html = tagged_html(&format!("x <{name}>\n\ny\n\n</{name}>\n\nz\n"));
+        assert_eq!(tag_lines(&html), vec![1, 7], "{name}: {html}");
+    }
+    // `<plaintext>` never closes.
+    assert_eq!(
+        tag_lines(&tagged_html("x <plaintext>\n\ny\n\nz\n")),
+        vec![1]
+    );
+    // A comment in an HTML block which a container boundary ends early. Text
+    // can't close it: the Markdown parser escapes a `-->` there.
+    assert_eq!(
+        tag_lines(&tagged_html("> <!--\n\na\n\n-->\n\nb\n")),
+        Vec::<usize>::new()
+    );
+    assert_eq!(
+        tag_lines(&tagged_html("> <!--\n\na\n\n<!-- -->\n\nb\n")),
+        vec![7]
+    );
+    // `<!-->` and `<!--->` close immediately.
+    assert_eq!(tag_lines(&tagged_html("<!-->\n\na\n")), vec![3]);
+    assert_eq!(tag_lines(&tagged_html("<!--->\n\na\n")), vec![3]);
+    // A closer followed by a new opener in one HTML event.
+    assert_eq!(
+        tag_lines(&tagged_html(
+            "x <textarea>\n\n<div></textarea><!--\n\na\n\n<!-- -->\n\nb\n"
+        )),
+        vec![1, 9]
+    );
+    // An opener inside an inline tag's attribute value doesn't suppress.
+    assert_eq!(
+        tag_lines(&tagged_html("<a title=\"<script>\">a</a>\nb\n")),
+        vec![1, 2]
+    );
+    // A raw-text opener which starts an HTML block inside a container is
+    // ended early by the container boundary, but suppression continues: no
+    // tags follow, even in the paragraph after the container.
+    for markdown in [
+        "* <script>\n  a\n\nb\n",
+        "> <script>\n> a\n\nb\n",
+        "* <textarea>\n  a\n\nb\n",
+    ] {
+        assert_eq!(
+            tag_lines(&tagged_html(markdown)),
+            Vec::<usize>::new(),
+            "{markdown:?}"
+        );
+    }
+    // The block's own closer, even in a later HTML block of the same item,
+    // ends suppression, and tags resume.
+    assert_eq!(
+        tag_lines(&tagged_html("* <script>\n\n  a\n\n  </script>\n\nb\n")),
+        vec![7]
+    );
+    assert_eq!(
+        tag_lines(&tagged_html("* <script>\n  a\n  </script>\n  c\n\nd\n")),
+        vec![4, 6]
+    );
+}
+
+#[test]
+fn test_line_number_tags_hand_written() {
+    // Hand-written start and end tags, in inline HTML or an HTML block, are
+    // escaped to text, even without a line map.
+    assert_eq!(
+        tagged_html("a <l-n>5</l-n> b\n"),
+        "<p><l-n>1</l-n>a &lt;l-n>5&lt;/l-n> b</p>\n"
+    );
+    assert_eq!(tagged_html("<L-N>\n"), "&lt;L-N>\n");
+    assert_eq!(
+        markdown_to_html("a <l-n>5</l-n>\n", None, Path::new("test.md")),
+        "<p>a &lt;l-n>5&lt;/l-n></p>\n"
+    );
+    // One in a code span is already escaped by the Markdown parser.
+    assert_eq!(
+        tagged_html("`<l-n>`\n"),
+        "<p><l-n>1</l-n><code>&lt;l-n&gt;</code></p>\n"
+    );
+    // A tag name which merely begins with `l-n` isn't reserved.
+    assert_eq!(
+        tagged_html("<l-nx>a</l-nx>\n"),
+        "<p><l-n>1</l-n><l-nx>a</l-nx></p>\n"
+    );
+}
+
+#[test]
+fn test_line_number_tags_diff_amplification() {
+    // Inserting a code line above a doc block renumbers its tags, so its
+    // `contents` change even though only its position shifts without tags.
+    let doc_blocks = |source: &str| {
+        let translation =
+            source_to_codechat_for_web(source, Path::new("foo.py"), 0.0, false, None).unwrap();
+        let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+            panic!("Translation produced a diff.");
+        };
+        code_mirror.doc_blocks
+    };
+    let before = doc_blocks("# first\nx = 1\n# second\ny = 2\n# third\n");
+    let after = doc_blocks("# first\nw = 0\nx = 1\n# second\ny = 2\n# third\n");
+    assert_eq!(before.len(), 3);
+    assert_eq!(after.len(), 3);
+    let transactions = diff_code_mirror_doc_blocks(&before, &after);
+    let updates: Vec<_> = transactions
+        .iter()
+        .map(|transaction| {
+            let CodeMirrorDocBlockTransaction::Update(update) = transaction else {
+                panic!("Expected only updates: {transactions:?}");
+            };
+            update
+        })
+        .collect();
+    // The first doc block precedes the insertion: no transaction.
+    assert_eq!(updates.len(), 2, "{transactions:?}");
+    // Each later block has a non-empty `contents` diff.
+    //
+    // Updates aren't ordered by position, so look them up by the block's
+    // original position.
+    let mut update_origins: Vec<_> = updates.iter().map(|update| update.from).collect();
+    update_origins.sort_unstable();
+    assert_eq!(update_origins, vec![before[1].from, before[2].from]);
+    for update in updates {
+        assert!(!update.contents.is_empty(), "{update:?}");
+    }
+    // Sanity: the tags really did change.
+    assert_eq!(tag_lines(&before[1].contents), vec![3]);
+    assert_eq!(tag_lines(&after[1].contents), vec![4]);
+}
+
+#[test]
+fn test_line_number_tags_toc() {
+    // The sidebar TOC has no tags, while the same file opened as a document
+    // does.
+    let html = |is_toc| {
+        let translation = source_to_codechat_for_web(
+            "# Contents\n\n* [a](a.md)\n",
+            Path::new("toc.md"),
+            0.0,
+            is_toc,
+            None,
+        )
+        .unwrap();
+        let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+            panic!("Translation produced a diff.");
+        };
+        code_mirror.doc
+    };
+    assert_eq!(tag_lines(&html(true)), Vec::<usize>::new());
+    assert_eq!(tag_lines(&html(false)), vec![1, 3]);
+}
+
+#[test]
+fn test_line_number_tags_source_files() {
+    // The example in <xref ref="cc-dl60mkSR4A"></xref>, using the Pest lexer
+    // (C) and the regex lexer (JavaScript).
+    for path in ["foo.c", "foo.js"] {
+        assert_eq!(
+            tagged_doc_blocks(
+                "int x;\n// Intro text\n// continues.\n/*\n   Block text.\n */\n",
+                path
+            ),
+            vec![
+                "<p><l-n>2</l-n>Intro text <l-n>3</l-n>continues.",
+                "<p><l-n>5</l-n>Block text."
+            ],
+            "{path}"
+        );
+        assert_eq!(
+            tagged_doc_blocks("/*\nA\n*/\n// B\n", path),
+            vec!["<p><l-n>2</l-n>A", "<p><l-n>4</l-n>B"],
+            "{path}"
+        );
+        // Adjacent block comments, whether or not the lexer merges them.
+        let lines: Vec<_> = tagged_doc_blocks("/*\nFirst\n*/\n/*\nSecond\n*/\n", path)
+            .iter()
+            .flat_map(|html| tag_lines(html))
+            .collect();
+        assert_eq!(lines, vec![2, 5], "{path}");
+    }
+
+    // An unterminated fence in one doc block, an empty doc block, and a final
+    // doc block without a trailing newline.
+    let doc_blocks = tagged_doc_blocks(
+        "// ```\n// fenced\nx = 1;\n//\ny = 2;\n// after\nz = 3;\n// last",
+        "foo.js",
+    );
+    let lines: Vec<_> = doc_blocks.iter().map(|html| tag_lines(html)).collect();
+    assert_eq!(lines, vec![vec![], vec![], vec![6], vec![8]]);
+    assert_eq!(doc_blocks[3], "<p><l-n>8</l-n>last");
+}
+
+// Verify the container of a hand-written construct holds no line number tags
+// after hydration, so that it still hydrates; the whole translation, with tags
+// removed, must equal the expected hydrated HTML.
+fn assert_hydrated_without_inner_tags(
+    // The source file's contents.
+    source: &str,
+    // The text which opens the container whose contents must hold no tags.
+    container_start: &str,
+    // The text which closes that container.
+    container_end: &str,
+    // The expected hydrated doc block, without line number tags.
+    expected: &str,
+    // The id of a target or fragment which the cache must hold, if any; the
+    // source must define it. Without one, the cache check below is vacuous.
+    cache_id: Option<&str>,
+) {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    let translation =
+        source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, Some(cache.clone()))
+            .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    let contents = &code_mirror.doc_blocks[0].contents;
+    let start = contents.find(container_start).expect(contents);
+    let end = start + contents[start..].find(container_end).expect(contents);
+    assert!(
+        !contents[start..end].contains("<l-n>"),
+        "{source:?}: {contents}"
+    );
+    assert_eq!(strip_line_number_tags(contents), expected, "{source:?}");
+    // The cache must hold no inner tags either.
+    let cache_guard = cache.lock().unwrap();
+    if let Some(id) = cache_id {
+        assert!(
+            cache_guard
+                .files
+                .values()
+                .any(|file| file.targets.contains_key(id) || file.fragments.contains_key(id)),
+            "{source:?}: the cache holds no `{id}`."
+        );
+    }
+    for file in cache_guard.files.values() {
+        for target in file.targets.values() {
+            assert!(!target.inner_html.contains("<l-n"), "{source:?}");
+        }
+        for fragment in file.fragments.values() {
+            assert!(!fragment.content.contains("<l-n"), "{source:?}");
+        }
+    }
+}
+
+// Verify that tags placed inside multi-line math are removed before
+// hydration, which requires a single text child. (A math `<span>` with an `id`
+// isn't hydrated, so the target case puts the id on a wrapper.)
+#[test]
+fn test_hydrate_line_number_tags_in_math() {
+    assert_hydrated_without_inner_tags(
+        "// A <span class=\"math math-inline\">x\n// y</span>.\n",
+        "<span",
+        "</span>",
+        "<p>A <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x y\\)</span>.",
+        None,
+    );
+    assert_hydrated_without_inner_tags(
+        "// A <span class=\"math math-display\">x\n// y</span>.\n",
+        "<span",
+        "</span>",
+        "<p>A <span class=\"math math-display mceNonEditable\" contenteditable=false>$$x y$$</span>.",
+        None,
+    );
+    // A target containing math: the cache must hold it, without tags.
+    assert_hydrated_without_inner_tags(
+        "// A <b id=\"cc-BvpEVGqHOi\"><span class=\"math math-inline\">x\n// y</span></b>.\n",
+        "<span",
+        "</span>",
+        "<p>A <b id=cc-BvpEVGqHOi><span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x y\\)</span></b>.",
+        Some("cc-BvpEVGqHOi"),
+    );
+}
+
+// Verify that tags placed inside `<pre>` and `<code>` are removed, which
+// exercises those branches of the pre-pass. An inline `<pre>` or `<code>`
+// mid-paragraph gets a tag after its newline.
+#[test]
+fn test_hydrate_line_number_tags_in_pre_and_code() {
+    assert_hydrated_without_inner_tags(
+        "// A <pre id=\"cc-xvEXpJ6CNL\">x\n// y</pre> z\n",
+        "<pre",
+        "</pre>",
+        "<p>A<pre id=cc-xvEXpJ6CNL>x\ny</pre> z<p>",
+        Some("cc-xvEXpJ6CNL"),
+    );
+    assert_hydrated_without_inner_tags(
+        "// A <code id=\"cc-1PHAgGQilp\">x\n// y</code> z\n",
+        "<code",
+        "</code>",
+        "<p>A <code id=cc-1PHAgGQilp>x\ny</code> z",
+        Some("cc-1PHAgGQilp"),
+    );
+    assert_hydrated_without_inner_tags(
+        "// A <code>x\n// y</code> z\n",
+        "<code",
+        "</code>",
+        "<p>A <code>x\ny</code> z",
+        None,
+    );
+}
+
+// Verify that tags placed inside hand-written `wc-mermaid` and
+// `graphviz-graph` elements are removed before hydration.
+#[test]
+fn test_hydrate_line_number_tags_in_diagram_elements() {
+    assert_hydrated_without_inner_tags(
+        "// <wc-mermaid>graph TD\n// A-->B</wc-mermaid>\n",
+        "<wc-mermaid",
+        "</wc-mermaid>",
+        "<p><wc-mermaid>graph TD\nA-->B</wc-mermaid>",
+        None,
+    );
+    assert_hydrated_without_inner_tags(
+        "// <graphviz-graph>digraph {\n// a->b\n// }</graphviz-graph>\n",
+        "<graphviz-graph",
+        "</graphviz-graph>",
+        "<p><graphviz-graph>digraph {\na->b\n}</graphviz-graph>",
+        None,
+    );
+}
+
+// Hydration regressions only: a `<pre` line opens an HTML block, which gets
+// no tags, so these pass without the pre-pass.
+#[test]
+fn test_hydrate_fenced_diagrams_without_tags() {
+    assert_hydrated_without_inner_tags(
+        "// <pre><code class=\"language-mermaid\">graph TD\n// A-->B\n// </code></pre>\n",
+        "<wc-mermaid",
+        "</wc-mermaid>",
+        "<wc-mermaid>graph TD\nA-->B\n</wc-mermaid>",
+        None,
+    );
+    assert_hydrated_without_inner_tags(
+        "// <pre><code class=\"language-graphviz\">digraph {\n// a->b\n// }</code></pre>\n",
+        "<graphviz-graph",
+        "</graphviz-graph>",
+        "<graphviz-graph>digraph {\na->b\n}</graphviz-graph>",
+        None,
+    );
+}
+
+// Verify that a multi-line cross-reference's `data-content` holds no tags,
+// since dehydration restores the cross-reference from it.
+#[test]
+fn test_hydrate_xref_multiline_content_has_no_tags() {
+    let translation = source_to_codechat_for_web(
+        "// See <xref ref=\"t\">a\n// b</xref>\n",
+        Path::new("foo.js"),
+        0.0,
+        false,
+        None,
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    let contents = &code_mirror.doc_blocks[0].contents;
+    assert!(contents.contains("data-content=\"a\nb\""), "{contents}");
+    assert!(contents.contains("<l-n>1</l-n>See"), "{contents}");
+    assert_eq!(contents.matches("<l-n>").count(), 1, "{contents}");
 }

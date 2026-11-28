@@ -146,11 +146,15 @@ export const init = async (
             quickbars_selection_toolbar:
                 "bold italic underline codeformat | quicklink h2 h3",
 
-            // Needed to allow custom elements.
+            // Preserve the Server's custom elements, including the inline
+            // line-number tags used to map rendered text to source lines.
+            // Per the
+            // [docs](https://www.tiny.cloud/docs/tinymce/latest/content-filtering/#custom_elements),
+            // `~` marks a tag as an inline element.
+            // <fragment id="cc-T070lmC3Kr"></fragment>
             extended_valid_elements:
-                "graphviz-graph[scale],wc-mermaid,xref[contenteditable|ref],fragment[contenteditable|following|id]",
-            // Per the [docs](https://www.tiny.cloud/docs/tinymce/latest/content-filtering/#custom_elements), `~` marks tags as an inline element, not a block element.
-            custom_elements: "graphviz-graph,wc-mermaid,~xref,~fragment",
+                "graphviz-graph[scale],wc-mermaid,xref[contenteditable|ref],fragment[contenteditable|following|id],l-n",
+            custom_elements: "graphviz-graph,wc-mermaid,~xref,~fragment,~l-n",
 
             // Setting the
             // [context menu](https://www.tiny.cloud/docs/tinymce/latest/contextmenu/#contextmenu)

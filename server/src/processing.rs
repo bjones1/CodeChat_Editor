@@ -65,11 +65,12 @@ use html5ever::{
     tree_builder::TreeBuilderOpts,
 };
 use imara_diff::{Algorithm, Diff, Hunk, InternedInput, TokenSource};
+use log::warn;
 use markup5ever_rcdom::{Node, NodeData, RcDom, SerializableHandle};
 use minify_html;
 use path_slash::PathBufExt as _;
 use phf::phf_map;
-use pulldown_cmark::{Options, Parser, html};
+use pulldown_cmark::{CowStr, Event, Options, Parser, Tag, TagEnd, html};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -498,6 +499,7 @@ pub fn codechat_for_web_to_source(
         let html_to_markdown = new_html_to_markdown();
         let converter = HtmlToMarkdownWrapped::new(&html_to_markdown);
         let tree = html_to_dom(&code_mirror.doc, None)?;
+        remove_line_number_tags(&tree);
         dehydrating_walk_node(&tree)?;
         return converter
             .convert(&tree)
@@ -581,12 +583,15 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
         if !code_contents.is_empty() {
             code_doc_block_arr.push(CodeDocBlock::CodeBlock(code_contents.to_string()));
         }
-        // Append the doc block.
+        // Append the doc block. Source heights and line maps describe the
+        // original source, which edits have since invalidated; reverse
+        // translation consults neither.
         code_doc_block_arr.push(CodeDocBlock::DocBlock(DocBlock {
             indent: codemirror_doc_block.indent.clone(),
             delimiter: codemirror_doc_block.delimiter.clone(),
             contents: codemirror_doc_block.contents.clone(),
             lines: 0,
+            contents_line_offsets: vec![],
         }));
         let byte_index_prev = byte_index;
         // Translate `to`.
@@ -734,6 +739,7 @@ pub fn doc_block_html_to_markdown(
         if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
             last_doc_block_index = Some(index);
             let tree = html_to_dom(&doc_block.contents, dom_location)?;
+            remove_line_number_tags(&tree);
             dehydrating_walk_node(&tree)?;
 
             // Calculate the total delimiter width: the delimiter width plus the
@@ -968,8 +974,9 @@ pub fn source_to_codechat_for_web(
     file_path: &Path,
     // The version of this file.
     version: f64,
-    // True if this file is a TOC.
-    _is_toc: bool,
+    // True if this file is rendered as the sidebar TOC, which has no line
+    // number tags.
+    is_toc: bool,
     // If provided, the cache for this project; otherwise, this file is not in a
     // project.
     cache: Option<Arc<Mutex<Cache>>>,
@@ -1021,7 +1028,11 @@ pub fn source_to_codechat_for_web(
             // Document-only files are easy: just encode the contents. Fragments
             // aren't supported in Markdown documents; `hydrate_html` reports
             // them as errors.
-            let dry_html = markdown_to_html(file_contents);
+            let dry_html = markdown_to_html(
+                file_contents,
+                (!is_toc).then_some(&LineMap::Document),
+                file_path,
+            );
             let html = hydrate_html(&dry_html, file_path, &cache)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             let html = minify(&html)?;
@@ -1051,32 +1062,29 @@ pub fn source_to_codechat_for_web(
             // block, then `[1]: http:/foo.org` in another doc block requires
             // both to be in the same Markdown document to translate correctly.
             //
-            // Walk through the code/doc blocks, ...
-            let doc_contents = code_doc_block_arr
-                .iter()
-                .enumerate()
-                // ...selecting only the doc block contents...
-                .filter_map(|(index, cdb)| {
-                    if let CodeDocBlock::DocBlock(db) = cdb {
-                        Some((index, db.contents.as_str()))
-                    } else {
-                        None
-                    }
-                })
-                // Precede each doc block with the separator string; the
-                // separator contains the index of this doc block in the vec of
-                // code/doc blocks. The separator appears before *every* doc
-                // block (including the first), so the DOM walk always knows the
-                // current doc block index and empty doc blocks stay aligned
-                // with their separators.
-                .fold(String::new(), |mut acc: String, x: (usize, &str)| {
-                    acc.push_str(&DOC_BLOCK_SEPARATOR_STRING.replace("{}", &x.0.to_string()));
-                    acc.push_str(x.1);
-                    acc
-                });
+            // Precede each doc block's contents with the separator string; the
+            // separator contains the index of this doc block in the vec of
+            // code/doc blocks. The separator appears before *every* doc block
+            // (including the first), so the DOM walk always knows the current
+            // doc block index and empty doc blocks stay aligned with their
+            // separators. Record where each doc block's contents begin, to map
+            // the resulting Markdown's lines back to source lines.
+            let mut doc_contents = String::new();
+            let mut contents_byte_offsets = Vec::new();
+            for (index, code_doc_block) in code_doc_block_arr.iter().enumerate() {
+                if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
+                    doc_contents
+                        .push_str(&DOC_BLOCK_SEPARATOR_STRING.replace("{}", &index.to_string()));
+                    contents_byte_offsets.push(doc_contents.len());
+                    doc_contents.push_str(&doc_block.contents);
+                }
+            }
 
             // Convert the Markdown to HTML.
-            let html = markdown_to_html(&doc_contents);
+            let line_map = (!is_toc).then(|| {
+                build_segment_line_map(&code_doc_block_arr, &doc_contents, &contents_byte_offsets)
+            });
+            let html = markdown_to_html(&doc_contents, line_map.as_ref(), file_path);
 
             // Break it back into doc blocks:
             //
@@ -1144,12 +1152,23 @@ pub fn source_to_codechat_for_web(
                         len += len_utf16(&code_string);
                     }
                     CodeDocBlock::DocBlock(doc_block) => {
+                        // The doc block is replaced by one newline per source
+                        // line it occupies; a comment with text which ends the
+                        // file without a final newline gains one, as it does
+                        // when saved. Contents are empty only for a comment
+                        // ending the file without a final newline, which
+                        // instead keeps the lack of that newline.
+                        let newlines = if doc_block.contents.is_empty() {
+                            doc_block.lines.saturating_sub(1)
+                        } else {
+                            doc_block.lines
+                        };
                         // Create the doc block.
                         code_mirror.doc_blocks.push(CodeMirrorDocBlock {
                             from: len,
                             // To. Note that the last doc block could be zero
                             // length, so handle this case.
-                            to: len + max(doc_block.lines, 1),
+                            to: len + max(newlines, 1),
                             indent: doc_block.indent.clone(),
                             delimiter: doc_block.delimiter.clone(),
                             // Used the markdown-translated replacement for this
@@ -1162,8 +1181,8 @@ pub fn source_to_codechat_for_web(
                         // Append newlines to the document; the doc block will
                         // replace these in the editor. This keeps the line
                         // numbering of non-doc blocks correct.
-                        source.push_str(&"\n".repeat(doc_block.lines));
-                        len += doc_block.lines;
+                        source.push_str(&"\n".repeat(newlines));
+                        len += newlines;
                     }
                 }
             }
@@ -1195,7 +1214,10 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
     let mut b = Builder::default();
     // Add custom tags produced during hydration, plus `input` (task list
     // checkboxes produced by pulldown-cmark) and `iframe` (embedded media
-    // inserted via TinyMCE), neither of which Ammonia allows by default.
+    // inserted via TinyMCE), neither of which Ammonia allows by default. Line
+    // number tags must be kept, not unwrapped: unwrapping turns
+    // `a\n<l-n>2</l-n>b` into the text `a 2b`. See
+    // <xref ref="cc-e7tpKZV9sK"></xref>.
     b.add_tags(&[
         "wc-mermaid",
         "graphviz-graph",
@@ -1203,6 +1225,7 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
         "fragment",
         "input",
         "iframe",
+        "l-n",
     ])
     // Allow any element to be assigned an ID and to be a gather element.
     .add_generic_attributes(&["id", "data-gather"])
@@ -1284,8 +1307,9 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
 // are needed by `<ruby>`; Ammonia can't limit them to that parent, so a stray
 // one remains. Most disallowed tags are stripped but their content is kept,
 // which unwraps a nested `<xref>` to its own optional content. A `<fragment>`,
-// `<script>`, or `<style>` is removed along with its content; so is `<svg>` or
-// `<math>`, which Ammonia drops entirely since it's not in the HTML namespace.
+// `<l-n>` line number tag, `<script>`, or `<style>` is removed along with its
+// content; so is `<svg>` or `<math>`, which Ammonia drops entirely since it's
+// not in the HTML namespace.
 // `id` and `data-gather` attributes are stripped because they aren't in the
 // allowlist, so this HTML never defines a target or gather element, nor
 // duplicates an id when rendered in another file. `contenteditable` isn't in
@@ -1300,7 +1324,7 @@ static CLEAN_LINK_CONTENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
         "ins", "kbd", "mark", "q", "rp", "rt", "ruby", "s", "samp", "small", "span", "strong",
         "sub", "sup", "time", "u", "var", "wbr",
     ]))
-    .add_clean_content_tags(&["fragment"])
+    .add_clean_content_tags(&["fragment", "l-n"])
     // Keep the math which `hydrate_link_content` hydrates after cleaning.
     .add_allowed_classes("span", &["math", "math-inline", "math-display"])
     .link_rel(None);
@@ -1315,7 +1339,10 @@ static CLEAN_LINK_CONTENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
 // `<fragment>` elements are removed *along with their contents* -- backlink
 // hydration is excluded from fragment content (see layer 4 under
 // <xref ref="cc-P-g5o100jN"></xref>), which is what keeps a gather element and
-// the fragments it lists from outdating each other forever. Each `<xref>` keeps
+// the fragments it lists from outdating each other forever. `<l-n>` line number
+// tags are likewise removed with their contents, so that inserting a line above
+// a fragment doesn't change its stored content; a rendered fragment instead
+// numbers its lines with `cc-line-number`. Each `<xref>` keeps
 // its `data-content`, from which a gather element re-hydrates its link; see
 // `hydrate_xrefs_within`. Only a `contenteditable` of `false` is kept: a
 // hand-written `true` could make part of a non-editable gather list editable,
@@ -1323,7 +1350,7 @@ static CLEAN_LINK_CONTENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
 static CLEAN_FRAGMENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
     let mut b = Builder::default();
     b.add_tags(&["wc-mermaid", "graphviz-graph", "xref", "input", "iframe"])
-        .add_clean_content_tags(&["fragment"])
+        .add_clean_content_tags(&["fragment", "l-n"])
         .add_allowed_classes(
             "span",
             &[
@@ -1372,6 +1399,23 @@ fn allow_phrasing_attributes(
 pub fn minify(html: &str) -> Result<String, FromUtf8Error> {
     let clean_html = AMMONIA_OPTIONS.clean(html).to_string();
     String::from_utf8(minify_html::minify(clean_html.as_bytes(), &MINIFY_OPTIONS))
+}
+
+// Matches one well-formed line number tag in minified HTML.
+static LINE_NUMBER_TAG: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new("<l-n>[0-9]+</l-n>").unwrap());
+
+/// Delete every `<l-n>N</l-n>` tag from minified HTML, so that a comparison
+/// ignores line numbers, which go stale whenever a line is inserted above them
+/// (see <xref ref="cc-qSbTxGyL2n"></xref>). Tests also use this to compare HTML
+/// whose line numbers don't matter.
+/// <fragment id="cc-TRSJgb1Wta"></fragment>
+pub(crate) fn strip_line_number_tags(
+    // Minified HTML, which contains no whitespace or attributes inside a tag.
+    html: &str,
+    // The HTML with its line number tags removed.
+) -> Cow<'_, str> {
+    LINE_NUMBER_TAG.replace_all(html, "")
 }
 
 // Compute the length of the provided string in UTF16 characters.
@@ -1442,16 +1486,543 @@ pub fn source_to_codechat_for_web_string(
 }
 
 /// Convert markdown to HTML. (This assumes the Markdown defined in the
-/// CommonMark spec.)
-fn markdown_to_html(markdown: &str) -> String {
+/// CommonMark spec.) When given a line map, precede the first inline content
+/// of each source line with a `<l-n>N</l-n>` line number tag; see
+/// [the line-number tags spec](processing/line-number-tags-spec.md).
+/// Hand-written `<l-n>` tags are always escaped, even without a line map.
+fn markdown_to_html(
+    // The Markdown to convert.
+    markdown: &str,
+    // How to map a line of `markdown` to a source line, or `None` to emit no
+    // line number tags (as for the sidebar TOC).
+    line_map: Option<&LineMap>,
+    // The file this Markdown came from, which warnings name.
+    file_path: &Path,
+    // The resulting HTML.
+) -> String {
     let mut options = Options::all();
     // htmd (which converts HTML back to Markdown) doesn't support smart
     // punctuation.
     options.remove(Options::ENABLE_SMART_PUNCTUATION);
-    let parser = Parser::new_ext(markdown, options);
+    let mut tagger = LineNumberTagger::new(markdown, line_map, file_path);
+    let mut events = Vec::new();
+    for (event, range) in Parser::new_ext(markdown, options).into_offset_iter() {
+        tagger.push(event, range.start, &mut events);
+    }
+    tagger.finish();
     let mut html_output = String::new();
-    html::push_html(&mut html_output, parser);
+    html::push_html(&mut html_output, events.into_iter());
     html_output
+}
+
+// Line number tags
+// ----------------
+//
+// These types implement
+// [the line-number tags spec](processing/line-number-tags-spec.md): first map
+// a byte offset in `markdown_to_html`'s input to a source line, then use that
+// to place `<l-n>` tags in the Markdown parser's event stream.
+//
+// ### Source line offsets
+//
+/// The byte offset at which each line of a string begins, used to find the
+/// 0-based line containing a byte offset. LF, lone CR, and CRLF each end one
+/// line, as in CommonMark. The offsets must come from the exact string given
+/// to the Markdown parser, since they're compared against the parser's byte
+/// ranges.
+/// <fragment id="cc-2RR1Hkiqvd"></fragment>
+struct LineStarts(Vec<usize>);
+
+impl LineStarts {
+    fn new(
+        // The text whose lines to index.
+        text: &str,
+    ) -> Self {
+        let bytes = text.as_bytes();
+        let mut line_starts = vec![0];
+        for (index, byte) in bytes.iter().enumerate() {
+            // A CR followed by an LF ends its line at the LF.
+            let ends_line = match byte {
+                b'\n' => true,
+                b'\r' => bytes.get(index + 1) != Some(&b'\n'),
+                _ => false,
+            };
+            if ends_line {
+                line_starts.push(index + 1);
+            }
+        }
+        LineStarts(line_starts)
+    }
+
+    fn line_of(
+        &self,
+        // A byte offset into the indexed text.
+        byte_offset: usize,
+        // The 0-based line containing this offset.
+    ) -> usize {
+        // The first entry is 0, so at least one start is $\le$ any offset.
+        self.0.partition_point(|&start| start <= byte_offset) - 1
+    }
+}
+
+/// Map a 0-based line of `markdown_to_html`'s input to a 1-based source line.
+/// <fragment id="cc-Pgf8BNFlSN"></fragment>
+pub(crate) enum LineMap {
+    /// The input is a Markdown document: Markdown line $m$ is source line
+    /// $m + 1$.
+    Document,
+    /// The input is the doc blocks of a source file, each preceded by a
+    /// separator. Each entry is one doc block's `(start_md_line,
+    /// source_lines)`: the Markdown line on which its contents begin, and the
+    /// source line of each of its content lines. Entries are in increasing
+    /// order of `start_md_line`; separator lines map to no source line.
+    Segments(Vec<(usize, Vec<usize>)>),
+}
+
+impl LineMap {
+    fn source_line(
+        &self,
+        // A 0-based line of `markdown_to_html`'s input.
+        md_line: usize,
+        // The 1-based source line, or `None` for a separator line.
+    ) -> Option<usize> {
+        match self {
+            LineMap::Document => Some(md_line + 1),
+            LineMap::Segments(segments) => {
+                // Find the last segment beginning at or before this line.
+                let index = segments.partition_point(|(start, _)| *start <= md_line);
+                let (start_md_line, source_lines) = segments.get(index.checked_sub(1)?)?;
+                // Lines past this doc block's contents belong to the next
+                // separator.
+                source_lines.get(md_line - start_md_line).copied()
+            }
+        }
+    }
+
+    /// The Markdown lines on which raw-text suppression resets; see
+    /// `LineNumberTagger::reset_at_segments`.
+    fn segment_starts(&self) -> Vec<usize> {
+        match self {
+            LineMap::Document => Vec::new(),
+            LineMap::Segments(segments) => segments.iter().map(|(start, _)| *start).collect(),
+        }
+    }
+}
+
+/// Build the line map for the doc blocks of a source file, given the
+/// concatenated Markdown they produce and the byte offset at which each doc
+/// block's contents begin within it (in the order of `code_doc_block_arr`'s
+/// doc blocks). Per the spec, content line $k$ of doc block $i$ is source line
+///
+/// $$L = 1 + \sum_{j < i} h_j + s_i[k]$$
+///
+/// where $h_j$ is the source height of block $j$ (code or doc) and $s_i[k]$ is
+/// `contents_line_offsets[k]` of doc block $i$.
+/// <fragment id="cc-QAaRjE3zO2"></fragment>
+fn build_segment_line_map(
+    // The lexed source file.
+    code_doc_block_arr: &[CodeDocBlock],
+    // The concatenated separators and doc block contents.
+    doc_contents: &str,
+    // The byte offset in `doc_contents` of each doc block's contents.
+    contents_byte_offsets: &[usize],
+) -> LineMap {
+    let line_starts = LineStarts::new(doc_contents);
+    let mut contents_byte_offsets = contents_byte_offsets.iter();
+    // $1 + \sum_{j < i} h_j$: the source line on which the current block
+    // begins.
+    let mut block_start_line = 1;
+    let mut segments = Vec::new();
+    for code_doc_block in code_doc_block_arr {
+        if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
+            // Measure from the actual text, so that a preceding doc block
+            // which lacks a final newline doesn't create an extra line.
+            let start_md_line = line_starts.line_of(*contents_byte_offsets.next().unwrap());
+            let source_lines = doc_block
+                .contents_line_offsets
+                .iter()
+                .map(|offset| block_start_line + offset)
+                .collect();
+            segments.push((start_md_line, source_lines));
+        }
+        block_start_line += code_doc_block_lines(code_doc_block);
+    }
+    LineMap::Segments(segments)
+}
+
+// ### Placement
+//
+// Matches a hand-written `<l-n>` start or end tag, which must be escaped so it
+// can't be confused with the tags this code places. The leading `<` isn't
+// captured, so the replacement can escape it.
+static HAND_WRITTEN_LINE_NUMBER_TAG: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i-u)<(/?l-n)([\t\n\x0C\r />])").unwrap());
+
+// The (lowercase) names of elements whose contents html5ever parses as raw text
+// or otherwise outside the DOM tree which dehydration walks.
+const RAW_TEXT_ELEMENT_NAMES: [&str; 12] = [
+    "script",
+    "style",
+    "textarea",
+    "title",
+    "xmp",
+    "iframe",
+    "noembed",
+    "noframes",
+    "noscript",
+    "plaintext",
+    "template",
+    "select",
+];
+
+// Matches the opener of an element in `RAW_TEXT_ELEMENT_NAMES`, or of a
+// comment. The first group captures the element name; it doesn't participate
+// for a comment.
+static RAW_TEXT_OPENER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"(?i-u)<(?:({})[\t\n\x0C\r />]|!--)",
+        RAW_TEXT_ELEMENT_NAMES.join("|")
+    ))
+    .unwrap()
+});
+
+/// Find the end tag `</name` followed by a byte which ends an HTML tag name,
+/// matching ASCII case-insensitively as html5ever does (`(?i-u)` in regex
+/// terms).
+fn find_raw_text_end_tag(
+    // The HTML to search.
+    html: &str,
+    // The lowercase element name.
+    name: &str,
+    // The byte offset in `html` at which to begin searching.
+    position: usize,
+    // The byte offset just past the terminating byte of the first match, or
+    // `None` if there's no match.
+) -> Option<usize> {
+    let bytes = html.as_bytes();
+    let match_len = "</".len() + name.len() + 1;
+    let last_start = bytes.len().checked_sub(match_len)?;
+    (position..=last_start).find_map(|start| {
+        let candidate = &bytes[start..start + match_len];
+        (candidate.starts_with(b"</")
+            && candidate[2..match_len - 1].eq_ignore_ascii_case(name.as_bytes())
+            && matches!(
+                candidate[match_len - 1],
+                b'\t' | b'\n' | b'\x0C' | b'\r' | b' ' | b'/' | b'>'
+            ))
+        .then_some(start + match_len)
+    })
+}
+
+/// What ends the active raw-text suppression region.
+enum RawTextCloser {
+    /// The end tag of this element, whose lowercase name is stored here.
+    EndTag(&'static str),
+    /// `-->` or `--!>`, ending a comment.
+    Comment,
+    /// Nothing: `<plaintext>` never closes.
+    Never,
+}
+
+/// An open raw-text suppression region; see
+/// <xref ref="cc-4KkOVSDENA"></xref>.
+struct RawTextSuppression {
+    closer: RawTextCloser,
+    // The source line of the opener, for warnings.
+    opener_line: Option<usize>,
+}
+
+/// Insert `<l-n>` line number tags into a stream of Markdown parser events, and
+/// escape hand-written ones. It places a tag before each eligible inline event
+/// which begins a new source line, except inside opaque elements (code blocks,
+/// images, HTML and metadata blocks) and raw-text suppression regions, where
+/// dehydration couldn't remove it.
+/// <fragment id="cc-f9V6VecYSP"></fragment>
+struct LineNumberTagger<'a> {
+    line_starts: LineStarts,
+    line_map: Option<&'a LineMap>,
+    file_path: &'a Path,
+    // The number of open opaque elements.
+    opaque_depth: usize,
+    suppression: Option<RawTextSuppression>,
+    // The line of the last tag emitted; tags must strictly increase.
+    last_tagged_line: usize,
+    // The Markdown lines on which raw-text suppression resets, and the index
+    // of the next one to reach.
+    segment_starts: Vec<usize>,
+    next_segment: usize,
+}
+
+impl<'a> LineNumberTagger<'a> {
+    fn new(
+        // The Markdown being parsed.
+        markdown: &str,
+        // The line map, or `None` to place no tags.
+        line_map: Option<&'a LineMap>,
+        // The file the Markdown came from, which warnings name.
+        file_path: &'a Path,
+    ) -> Self {
+        LineNumberTagger {
+            line_starts: LineStarts::new(markdown),
+            line_map,
+            file_path,
+            opaque_depth: 0,
+            suppression: None,
+            last_tagged_line: 0,
+            segment_starts: line_map.map(LineMap::segment_starts).unwrap_or_default(),
+            next_segment: 0,
+        }
+    }
+
+    /// Process one parser event, appending it (possibly escaped) to `events`,
+    /// preceded by a line number tag if it starts a new source line.
+    fn push(
+        &mut self,
+        // The parser's event.
+        event: Event<'a>,
+        // The byte offset in the Markdown at which this event begins.
+        start: usize,
+        // The output event stream.
+        events: &mut Vec<Event<'a>>,
+    ) {
+        let md_line = self.line_starts.line_of(start);
+        self.reset_at_segments(md_line);
+
+        // Escape hand-written tags before scanning for raw text, so that the
+        // scanner sees the HTML which will actually be emitted.
+        let event = match event {
+            Event::Html(html) => Event::Html(self.escape_hand_written_tags(html, md_line)),
+            Event::InlineHtml(html) => {
+                Event::InlineHtml(self.escape_hand_written_tags(html, md_line))
+            }
+            event => event,
+        };
+
+        // Check the trigger before applying the state changes this event
+        // makes, so an opaque `Image` is tagged while its contents aren't, and
+        // a raw-text closer at the start of a line isn't tagged.
+        if self.opaque_depth == 0
+            && self.suppression.is_none()
+            && is_line_number_trigger(&event)
+            && let Some(line) = self.source_line(md_line)
+            && line > self.last_tagged_line
+        {
+            events.push(Event::InlineHtml(CowStr::from(format!(
+                "<l-n>{line}</l-n>"
+            ))));
+            self.last_tagged_line = line;
+        }
+
+        match &event {
+            Event::Start(
+                Tag::CodeBlock(_) | Tag::Image { .. } | Tag::HtmlBlock | Tag::MetadataBlock(_),
+            ) => self.opaque_depth += 1,
+            Event::End(
+                TagEnd::CodeBlock | TagEnd::Image | TagEnd::HtmlBlock | TagEnd::MetadataBlock(_),
+            ) => self.opaque_depth = self.opaque_depth.saturating_sub(1),
+            Event::Html(html) => self.scan_raw_text(html, false, md_line),
+            Event::InlineHtml(html) => self.scan_raw_text(html, true, md_line),
+            _ => {}
+        }
+        events.push(event);
+    }
+
+    /// Reset raw-text suppression at the end of the input.
+    fn finish(&mut self) {
+        self.reset_suppression();
+    }
+
+    /// Map a Markdown line to a source line.
+    fn source_line(
+        &self,
+        // The 0-based Markdown line.
+        md_line: usize,
+        // The 1-based source line, or `None` if no tags are wanted (no line
+        // map) or the line is part of a doc block separator.
+    ) -> Option<usize> {
+        self.line_map?.source_line(md_line)
+    }
+
+    /// Reset raw-text suppression when the first event at or after the next
+    /// doc block's first line arrives, so that an unclosed tag or comment (or
+    /// a false positive in an attribute) can't suppress tags in later doc
+    /// blocks. The separator's own closers, scanned before this, usually end
+    /// the region first.
+    fn reset_at_segments(
+        &mut self,
+        // The 0-based Markdown line on which the current event begins.
+        md_line: usize,
+    ) {
+        while self
+            .segment_starts
+            .get(self.next_segment)
+            .is_some_and(|start| *start <= md_line)
+        {
+            self.reset_suppression();
+            self.next_segment += 1;
+        }
+    }
+
+    /// End any raw-text suppression region, warning (with the opener's source
+    /// line, when known) that it was never closed.
+    fn reset_suppression(&mut self) {
+        if let Some(suppression) = self.suppression.take() {
+            match suppression.opener_line {
+                Some(line) => warn!(
+                    "{}:{line}: unclosed raw-text element or comment; line numbers after it are missing.",
+                    self.file_path.display()
+                ),
+                None => warn!(
+                    "{}: unclosed raw-text element or comment; line numbers after it are missing.",
+                    self.file_path.display()
+                ),
+            }
+        }
+    }
+
+    /// Escape each hand-written `<l-n>` start or end tag to `&lt;l-n`, so that
+    /// it stays visible text: `l-n` is reserved for the tags this code
+    /// places, which are hidden, and an unclosed one would swallow later
+    /// blocks. Escaping also preserves the text on save.
+    /// <fragment id="cc-CJIPQ2ftG9"></fragment>
+    fn escape_hand_written_tags(
+        &self,
+        // The HTML of an `Html` or `InlineHtml` event.
+        html: CowStr<'a>,
+        // The Markdown line on which this event begins.
+        md_line: usize,
+        // The HTML with hand-written tags escaped.
+    ) -> CowStr<'a> {
+        if !HAND_WRITTEN_LINE_NUMBER_TAG.is_match(&html) {
+            return html;
+        }
+        for match_ in HAND_WRITTEN_LINE_NUMBER_TAG.find_iter(&html) {
+            // An `InlineHtml` event may span lines.
+            let match_md_line = md_line + html[..match_.start()].matches('\n').count();
+            match self.source_line(match_md_line) {
+                Some(line) => warn!(
+                    "{}:{line}: the l-n tag is reserved for line numbers; escaping it.",
+                    self.file_path.display()
+                ),
+                None => warn!(
+                    "{}: the l-n tag is reserved for line numbers; escaping it.",
+                    self.file_path.display()
+                ),
+            }
+        }
+        CowStr::from(
+            HAND_WRITTEN_LINE_NUMBER_TAG
+                .replace_all(&html, "&lt;$1$2")
+                .into_owned(),
+        )
+    }
+
+    /// Track raw-text suppression across the HTML of an `Html` or
+    /// `InlineHtml` event. html5ever parses the contents of a raw-text element
+    /// or comment as literal text or separate fragments, where dehydration
+    /// can't remove a line number tag; CommonMark may end the HTML block
+    /// holding one early, so the Markdown events don't reveal this.
+    /// <fragment id="cc-YPPU9sUNNZ"></fragment>
+    fn scan_raw_text(
+        &mut self,
+        // The event's HTML.
+        html: &str,
+        // True for an `InlineHtml` event, whose opener must begin the event:
+        // anything later is inside the tag, such as an attribute value.
+        is_inline: bool,
+        // The Markdown line on which this event begins.
+        md_line: usize,
+    ) {
+        let mut position = 0;
+        loop {
+            match &self.suppression {
+                None => {
+                    let Some(captures) = RAW_TEXT_OPENER.captures_at(html, position) else {
+                        return;
+                    };
+                    let opener = captures.get(0).unwrap();
+                    if is_inline && opener.start() != 0 {
+                        return;
+                    }
+                    let closer = match captures.get(1) {
+                        // A comment's closer may overlap its opener, as in
+                        // `<!-->`, so search for it from the opener's start.
+                        None => {
+                            position = opener.start();
+                            RawTextCloser::Comment
+                        }
+                        Some(name) => {
+                            position = opener.end();
+                            // `RAW_TEXT_OPENER` matched one of these names.
+                            let name = RAW_TEXT_ELEMENT_NAMES
+                                .into_iter()
+                                .find(|known| known.eq_ignore_ascii_case(name.as_str()))
+                                .unwrap();
+                            if name == "plaintext" {
+                                RawTextCloser::Never
+                            } else {
+                                RawTextCloser::EndTag(name)
+                            }
+                        }
+                    };
+                    let opener_md_line = md_line + html[..opener.start()].matches('\n').count();
+                    self.suppression = Some(RawTextSuppression {
+                        closer,
+                        opener_line: self.source_line(opener_md_line),
+                    });
+                }
+                Some(suppression) => {
+                    let closer_end = match &suppression.closer {
+                        RawTextCloser::EndTag(name) => find_raw_text_end_tag(html, name, position),
+                        RawTextCloser::Comment => ["-->", "--!>"]
+                            .iter()
+                            .filter_map(|closer| {
+                                html[position..]
+                                    .find(closer)
+                                    .map(|found| position + found + closer.len())
+                            })
+                            .min(),
+                        RawTextCloser::Never => None,
+                    };
+                    let Some(closer_end) = closer_end else {
+                        return;
+                    };
+                    self.suppression = None;
+                    position = closer_end;
+                }
+            }
+        }
+    }
+}
+
+/// Report whether a line number tag may be placed before this event. Only
+/// inline content qualifies: TinyMCE wraps a tag placed between blocks in an
+/// empty paragraph, break events begin on the line they end, and an `End`
+/// event shares its `Start`'s range.
+fn is_line_number_trigger(
+    // The next event from the Markdown parser.
+    event: &Event,
+    // True if a tag may precede this event.
+) -> bool {
+    matches!(
+        event,
+        Event::Text(_)
+            | Event::Code(_)
+            | Event::InlineMath(_)
+            | Event::DisplayMath(_)
+            | Event::InlineHtml(_)
+            | Event::FootnoteReference(_)
+            | Event::TaskListMarker(_)
+            | Event::Start(
+                Tag::Emphasis
+                    | Tag::Strong
+                    | Tag::Strikethrough
+                    | Tag::Superscript
+                    | Tag::Subscript
+                    | Tag::Link { .. }
+                    | Tag::Image { .. }
+            )
+    )
 }
 
 // Mark the current cursor position with a
@@ -1707,7 +2278,11 @@ fn hydrate_dom(
     is_markdown: bool,
     // The parsed, patched DOM plus the walk results needed by later phases.
 ) -> io::Result<(Rc<Node>, WalkContext)> {
-    // Everything below treats a `<fragment>` as empty, so this comes first.
+    // Remove line number tags inside literal-text containers and `<xref>`s
+    // first: hydration's replacements and the cache's captured content require
+    // them to hold no tags.
+    remove_inner_line_number_tags(&dom);
+    // Everything below treats a `<fragment>` as empty, so this comes next.
     hoist_fragment_content(&dom);
     // Stamp the file and canonicalize its path before taking the cache lock, so
     // that no I/O happens while the lock is held. The stamp captures the state
@@ -1802,6 +2377,36 @@ fn hydrate_dom(
     }
     drop(cache_guard);
     Ok((dom, walk_context))
+}
+
+/// Remove the `<l-n>` line number tags which the translation to HTML injected
+/// inside elements whose contents are literal text or are captured verbatim,
+/// per <xref ref="cc-e7tpKZV9sK"></xref>. These are `<pre>`, `<code>`,
+/// `wc-mermaid`, `graphviz-graph`, math `<span>`s, and `<xref>`s; tags anywhere
+/// else are kept. Math, Mermaid, and GraphViz hydration each require a single
+/// text child, and an `<xref>`'s `data-content` is captured from its children
+/// (see `hydrate_source_xref`), so a tag inside any of them would break the
+/// replacement or leak into the cache and the saved source.
+/// <fragment id="cc-Hx4rQ7mWbN"></fragment>
+fn remove_inner_line_number_tags(
+    // The node whose descendants are searched.
+    node: &Rc<Node>,
+) {
+    for child in node.children.borrow().iter() {
+        let is_literal_container = match get_node_tag_name(child) {
+            Some("pre" | "code" | "wc-mermaid" | "graphviz-graph" | "xref") => true,
+            Some("span") => get_attr_value(child, "class").is_some_and(|class| {
+                let has_token = |wanted: &str| class.split_ascii_whitespace().any(|t| t == wanted);
+                has_token("math") && (has_token("math-inline") || has_token("math-display"))
+            }),
+            _ => false,
+        };
+        if is_literal_container {
+            remove_line_number_tags(child);
+        } else {
+            remove_inner_line_number_tags(child);
+        }
+    }
 }
 
 /// Move anything inside a `<fragment>` to just after it. Hydration replaces a
@@ -3061,6 +3666,105 @@ pub fn remove_tinymce_data(
         });
     }
     Some(node.clone())
+}
+
+/// Remove every `<l-n>` line number tag, with its contents, from a DOM before
+/// dehydration, per <xref ref="cc-e7tpKZV9sK"></xref>. This must be a separate
+/// pass: `dehydrating_walk_node` doesn't descend into the nodes it replaces,
+/// and a stray tag would prevent those replacements, which require a single
+/// text child or only text and `<br>` children. Tags are matched by local name
+/// in any namespace, since one pasted inside `<svg>` or `<math>` is parsed as a
+/// foreign element, and inside `<template>` contents, which aren't children of
+/// the `<template>` element.
+///
+/// After removing a tag, merge the text nodes on either side of it, so that
+/// `htmd` sees the same tree as for HTML which never contained the tag. Since
+/// `htmd` escapes text based on its position within a text node, unmerged
+/// text such as `2) b` would be escaped as if it began a line. If
+/// `html_to_dom` placed the cursor marker inside a removed tag, keep the
+/// marker as text in the tag's place.
+/// <fragment id="cc-4AJLIwQ1g7"></fragment>
+fn remove_line_number_tags(
+    // The node whose descendants are searched for tags.
+    node: &Rc<Node>,
+) {
+    if let NodeData::Element {
+        template_contents, ..
+    } = &node.data
+        && let Some(contents) = template_contents.borrow().as_ref()
+    {
+        remove_line_number_tags(contents);
+    }
+
+    let mut index = 0;
+    while index < node.children.borrow().len() {
+        let child = node.children.borrow()[index].clone();
+        if !matches!(&child.data, NodeData::Element { name, .. } if &*name.local == "l-n") {
+            remove_line_number_tags(&child);
+            index += 1;
+            continue;
+        }
+
+        let mut children = node.children.borrow_mut();
+        child.parent.set(None);
+        if contains_text(&child, UNICODE_CURSOR_MARKER) {
+            let marker = Node::new(NodeData::Text {
+                contents: RefCell::new(UNICODE_CURSOR_MARKER.to_string().into()),
+            });
+            marker.parent.set(Some(Rc::downgrade(node)));
+            children[index] = marker;
+            merge_with_next_text(&mut children, index);
+            // The marker, now merged with any following text, needs no walk;
+            // resume after it.
+            if !(index > 0 && merge_with_next_text(&mut children, index - 1)) {
+                index += 1;
+            }
+        } else {
+            children.remove(index);
+            // Whether or not the neighbors merge, the next unwalked node is now
+            // at `index`.
+            if index > 0 {
+                merge_with_next_text(&mut children, index - 1);
+            }
+        }
+    }
+}
+
+/// If the nodes at `index` and `index + 1` are both text, append the second's
+/// text to the first, then remove the second.
+fn merge_with_next_text(
+    // The children of one node.
+    children: &mut Vec<Rc<Node>>,
+    // The index of the first node to merge.
+    index: usize,
+    // True if the nodes were merged.
+) -> bool {
+    if let Some([first, second]) = children.get(index..index + 2)
+        && let NodeData::Text { contents: first } = &first.data
+        && let NodeData::Text { contents: second } = &second.data
+    {
+        first.borrow_mut().push_tendril(&second.borrow());
+        children.remove(index + 1);
+        true
+    } else {
+        false
+    }
+}
+
+/// Return true if any descendant text node of `node` contains `c`.
+fn contains_text(
+    // The node whose descendants are searched.
+    node: &Rc<Node>,
+    // The character to find.
+    c: char,
+) -> bool {
+    node.children
+        .borrow()
+        .iter()
+        .any(|child| match &child.data {
+            NodeData::Text { contents } => contents.borrow().contains(c),
+            _ => contains_text(child, c),
+        })
 }
 
 /// Walk a node, dehydrating it by removing TinyMCE temporary attributes,
