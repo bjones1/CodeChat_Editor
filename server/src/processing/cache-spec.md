@@ -248,8 +248,9 @@ Details:
 #### Examples
 
 Each row shows the top-level blocks of a Markdown document, one per entry, and
-the blocks which fragment `f` encloses. `<fragment id="f">` stands for an empty
-tag, `<fragment id="f"></fragment>`, followed by the rest of its block. The
+the blocks which fragment `f` encloses. `<fragment id="f" …>` stands for an
+empty tag with those attributes, such as `<fragment id="f"></fragment>`,
+followed by the rest of its block. The
 fragment's content never includes its own tag or backlinks. Every row has a
 matching `test_markdown_fragment_*` test in `tests.rs`.
 
@@ -272,14 +273,14 @@ matching `test_markdown_fragment_*` test in `tests.rs`.
 
 #### Edge cases and errors
 
-These bullets describe the code in `processing.rs`; not each one has its own
+These bullets describe the code in `processing.rs`; not every one has its own
 test.
 
 * Blocks are counted in the rendered HTML, not in the Markdown source: a blank
   line or a link reference definition is no block. A tag alone in its own
-  paragraph is therefore a block of its own, an empty paragraph, so the
-  fragment begins with it and `following="0"` encloses nothing visible. Put the
-  tag on the same line as the block it starts, as the examples do.
+  paragraph renders as an empty paragraph, which is a block, so the fragment
+  begins with it and `following="0"` encloses nothing visible. Put the tag on
+  the same line as the block it starts, as the examples do.
 * A fragment tag in a code span or a fenced code block is text, so no fragment
   exists.
 * An `id` which is not a valid CSS identifier (`1x`) hydrates the tag to an
@@ -293,11 +294,11 @@ test.
   a gather element in a later block removes the error. A gather element in the
   same top-level block as the tag cannot be excluded, so move the tag to
   another block.
-* Only top-level headings bound a section. A raw HTML heading such
-  as `<h2 id="b">B</h2>` is top-level and bounds a section like `## B`. A
-  heading inside a block quote, a list or a raw HTML container such as `<div>`
-  starts nothing: a fragment in it begins with that whole block, and runs to
-  the end of the enclosing top-level section.
+* Only top-level headings bound a section. A raw HTML heading such as
+  `<h2 id="b">B</h2>` is top-level and bounds a section like `## B`. A heading
+  inside a block quote, a list or a raw HTML container such as `<div>` starts
+  nothing: a fragment in it begins with that whole block, and runs to the end
+  of the enclosing top-level section.
 * Text placed inside the tag (`<fragment id="f">Title</fragment>`) moves after
   the tag and stays in the fragment.
 * A gather element may list a fragment from its own document, as long as it
