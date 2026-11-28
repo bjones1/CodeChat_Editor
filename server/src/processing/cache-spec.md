@@ -143,11 +143,12 @@ contenteditable="false">See <a href="path/to/gather#bar">Bazzy things</a>, <a
 href="path/to/another/gather#zap">Zappy things</a></fragment>`. A fragment's
 content by default includes the content of the current doc block and the content
 of the following code/doc block; fragments are not allowed in Markdown documents
-(in this case, the fragment content consists of an error message). Fragments may
-include the `following` attribute to enclose a specific number of the following
-code/doc blocks; for example, `<fragment id="bar" following="3"></fragment>`
-includes the current doc block along with the next 3 code/doc blocks;
-`following` must be a whole number.
+(in this case, the fragment content consists of an error message), though a
+Markdown document may include a fragment defined elsewhere; see
+<xref ref="cc-JzLRfBr83U"></xref>. Fragments may include the `following`
+attribute to enclose a specific number of the following code/doc blocks; for
+example, `<fragment id="bar" following="3"></fragment>` includes the current doc
+block along with the next 3 code/doc blocks; `following` must be a whole number.
 
 Details:
 
@@ -221,6 +222,166 @@ things</h3>`:
   Implementation of Fragments and gather elements
 </h3>
 
+<h2 id="cc-JzLRfBr83U">Inline inclusion of fragments</h2>
+
+A gather element lists fragment content in a separate block, laid out like the
+source it came from. An inline inclusion instead inserts the *text* of a
+fragment into the surrounding content, where it takes on the formatting of its
+context: included in a heading, the fragment's text becomes part of that
+heading; included in a list item, part of that item. The syntax is `<include
+ref="id"></include>`, where `ref` is the `id` of a `Fragment` (the name is
+provisional; see the open questions). The element allows no attribute except
+`ref`; all others are silently stripped during hydration. As for `<fragment>`,
+content written inside an `<include>` in the source is moved after its closing
+tag during hydration; the content which hydration places inside it is discarded
+by dehydration.
+
+An `<include>` may appear in any document, including a Markdown document. A
+Markdown document can't define fragments (see
+<xref ref="cc-gKXTXIZnFm"></xref>), but it can include one from a source file:
+this lets a README or user guide quote the documentation kept beside the code
+it describes, instead of a copy which drifts out of date.
+
+For example, a source file contains this doc block, followed by a code block:
+
+```c
+// #### Install the *tools*
+//
+// <fragment id="id1" following="0"></fragment>
+```
+
+A Markdown document elsewhere in the project contains the heading `### Setup:
+<include ref="id1"></include>`. After cache hydration, this heading becomes:
+
+```html
+<h3>Setup: <include ref="id1" contenteditable="false">Install the <em>tools</em></include></h3>
+```
+
+The `<h4>` wrapper is dropped, since the host is already a heading; the `<em>`
+stays. The paragraph which held the `<fragment>` tag is empty in the fragment's
+content, since cleaning removed that tag, so it contributes nothing.
+
+### Choosing the included content
+
+The included content is built from the doc blocks of the fragment's content
+(its `cc-fragment-doc-contents` elements), never from its layout wrappers
+(`cc-fragment-*`, line numbers, indents) or its code blocks, which aren't doc
+content. The *host* is the nearest block-level ancestor of the `<include>`: a
+heading, `p`, `li`, `td`, `blockquote`, and so on. Doc blocks and Markdown
+documents are both Markdown, so an `<include>` written alone on a line parses
+as the only content of a `<p>`: an `<include>` always has a host.
+
+1. **Block inclusion: the host is a `<p>` which is a direct child of its doc
+   block (or, in a Markdown document, of the document), and the `<include>` is
+   its only non-whitespace content.** The fragment's doc content is inserted
+   unchanged, keeping its headings, lists, code fences, and so on. Since a `<p>`
+   can't contain block content, the host `<p>` is replaced by `<div
+   class="cc-include" contenteditable="false">`, which holds the `<include>`,
+   now empty, followed by that content. Heading levels are not rewritten.
+2. **Inline inclusion: every other case** (the usual one: the `<include>` sits
+   inside a heading, paragraph, or list item beside text). The content is
+   flattened to phrasing content, placed inside the `<include>`:
+   * Block wrappers (`p`, `h1`-`h6`, `div`, `blockquote`) are unwrapped and
+     their children kept, so the host's formatting applies, not the source's.
+     Heading levels in the source are discarded: an `<h1>` included in an
+     `<h4>` is `<h4>` text.
+   * Lists and tables are replaced by their text content, in document order,
+     separated by single spaces.
+   * The permitted content of an `<a>` (see
+     <xref ref="cc-2dkkF9YJnL"></xref>) is kept: inline formatting such as
+     `em`, `strong`, and `code`, inline math, and images. Links and
+     `<xref>`s are kept too, unless the `<include>` has an `<a>` ancestor
+     (in Markdown link text, for example), since links can't nest; there,
+     they are unwrapped and their content kept.
+   * Any other element, such as a diagram (`wc-mermaid`, `graphviz-graph`) or
+     an `iframe`, is omitted.
+   * Blocks left empty by these rules are dropped. Where unwrapping leaves two
+     blocks adjacent, a single space is inserted between them; `<br>` is kept.
+     Leading and trailing whitespace of the result is trimmed.
+   * A fragment with no doc content left by these rules produces an error
+     message.
+
+In both cases, each `<xref>` in the included content which hydrated to a link
+is re-hydrated from its `data-content` so that it links from the including
+file, exactly as a gather list does (layer 5 under
+<xref ref="cc-P-g5o100jN"></xref>); an error message is kept as is.
+
+An `<include>` in the optional content of an `<xref>` is removed when that
+content is <xref ref="cc-2dkkF9YJnL">cleaned</xref>, as a `<fragment>` is.
+
+### Hydrated form and dehydration
+
+The hydrated form always keeps the `<include ref="id">` element, so that
+dehydration can recover `ref`, as an `<xref>` keeps its own:
+
+* Inline inclusion: `<include ref="id" contenteditable="false">(content)
+  </include>`, in place.
+* Block inclusion: `<div class="cc-include" contenteditable="false"><include
+  ref="id"></include>(content)</div>`, in place of the host `<p>`.
+* An error: `<include ref="id" contenteditable="false"><span
+  class="cc-error">(message)</span></include>`, in place, in either case.
+
+Dehydration removes the content and the `contenteditable` attribute of each
+`<include>`, and replaces each `div.cc-include` with a `<p>` holding only its
+`<include>`. The saved source is therefore the `<include ref="id"></include>`
+the user wrote. In a Markdown document or doc block, this is inline raw HTML,
+which the Faithful translation mode of the HTML-to-Markdown conversion keeps
+verbatim, as it does an `<xref>`.
+
+The Client must preserve the element: its TinyMCE configuration declares
+`include` an inline custom element (`~include`) allowing the `contenteditable`
+and `ref` attributes, as it does `xref`, and allows the `cc-include` class on a
+`div`. The Server's sanitizer allowlist gains the same element, attributes, and
+class.
+
+### Errors
+
+Each of these replaces the content of the `<include>` with an error message,
+shown wherever the include is; it never aborts hydration of the rest of the
+file:
+
+* `ref` is missing or empty, or isn't a valid CSS identifier.
+* `ref` is not found, is defined more than once, or names a target or gather
+  element rather than a fragment.
+* The fragment's own content is an error message (for example, it contains a
+  gather element, or is a fragment in a Markdown document); that message is
+  shown unchanged.
+* The fragment contains no doc content after the rules of inline inclusion
+  above.
+
+### Dependencies
+
+An include is a reference like a cross-reference: its file is added to the
+`IdEntry::dependents` of `ref`, including while the id is `Missing`. A change to
+the fragment's content, or to the id's `IdState`, outdates the file by the
+existing rules, so no new outdating rule is needed.
+
+In terms of the layers under <xref ref="cc-P-g5o100jN">cache design</xref>:
+
+* Include hydration is layer 6: it depends on layers 1 and 3 only, and nothing
+  depends on it. Like gather-list hydration, it runs after the file's own
+  fragments are committed, so including a fragment from the same file, or
+  from within the same doc block, needs no special case.
+* An `<include>` inside a fragment is removed, along with its contents, when
+  `Fragment::content` is cleaned, as a `<fragment>` is. Were it kept, fragment
+  A including fragment B, which includes A, would outdate each other forever;
+  with the removal, a change still travels at most two steps. The cost is that a
+  gather element doesn't show what a listed fragment includes. For the same
+  reason, a fragment which includes itself shows its own content without the
+  included text.
+* Likewise, `Target::inner_html` removes includes, since a cross-reference
+  renders it inside an `<a>`: an `<xref>` to a heading containing an include
+  shows the heading without the included text.
+
+### Open questions
+
+* Whether to reuse `<fragment>` itself instead of a new element. That would
+  conflict with the rules that a `<fragment>` requires an `id`, allows no
+  content, and hydrates to backlinks.
+* Whether a block inclusion should rewrite heading levels to fit the section
+  it's in.
+* Whether included content links back to its source, as a gather list does.
+
 Search (future work)
 --------------------
 
@@ -281,6 +442,10 @@ lower-numbered layers:
    everything about a target which this reads is embedded in the fragment's
    content, so any change to it also changes that content, which outdates the
    gathering file.
+6. `<include>` hydration depends on layers 1 and 3, re-hydrating each `<xref>`
+   in the included content as layer 5 does; see
+   <xref ref="cc-JzLRfBr83U"></xref>. An `<include>` is removed from both
+   layers, so no cached state depends on this one.
 
 Only layers 1 and 3 are cached, and layer 3 depends only on layer 1 through
 layer 2. So a change travels at most two steps (C → B → A), which matches the
@@ -291,10 +456,11 @@ to track dependents of an id, so that files containing these dependencies can be
 marked `Outdated` (see below); these are sent to the `Cache::consumer_tx`
 channel for processing. Dependencies are tracked at file granularity, on the id
 rather than on the item defining it: `IdEntry::dependents` is the set of files
-whose rendered output depends on this id, by any means -- an `<xref ref="id">`
-or a `data-gather` list naming it. One uniform set suffices in all three
-`IdState`s because the typical action taken on a dependent is marking this file
-outdated (fragments also use their dependents to generate "See x" links).
+whose rendered output depends on this id, by any means -- an `<xref ref="id">`,
+an `<include ref="id">`, or a `data-gather` list naming it. One uniform set
+suffices in all three `IdState`s because the typical action taken on a
+dependent is marking this file outdated (fragments also use their dependents to
+generate "See x" links).
 
 Updating dependencies requires a definition of what constitutes a difference
 which would trigger outdating dependencies. The state which is checked for
