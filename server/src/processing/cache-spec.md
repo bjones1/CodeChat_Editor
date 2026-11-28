@@ -245,6 +245,41 @@ Details:
   particular, a fragment whose blocks include a gather element is an error; give
   it a `following` attribute which stops before the gather element.
 
+#### Rendering a fragment's content
+
+A gather element displays a Markdown fragment's content as stored in the cache.
+This content is produced when the fragment's document is hydrated, as follows:
+
+1. Hydrate the document's cross-references, math, diagrams, and fragment
+   backlinks, but not its gather lists, which depend on fragment contents.
+2. Serialize the blocks the fragment encloses, each with its own tag, in
+   document order. Comments and the whitespace between blocks come along.
+3. Clean this HTML as for any fragment: remove every `id` and `data-gather`,
+   so that the gathered copy defines no target or gather element and duplicates
+   no id; remove every `<fragment>` along with its backlinks, including those
+   of other fragments in the same blocks; keep only a `contenteditable` of
+   `false`.
+
+The result is the document's own HTML, not a reproduction of its source. Unlike
+a source file's fragment, it has no line numbers, indents, or `cc-fragment-*`
+wrappers, since a Markdown document has neither source lines worth numbering
+nor code to align.
+
+Consequences:
+
+* A heading keeps its level: a `##` section gathered under an `<h4>` still
+  shows an `<h2>`. The gathered copy is a quotation of the original, so its
+  outline isn't renumbered to fit the gathering document.
+* Without its `id`, a heading in the gathered copy can't be the target of a
+  cross-reference; a cross-reference to it leads to the original document.
+* A cross-reference in the fragment links from the gathering document, as for
+  any fragment; see <xref ref="cc-gKXTXIZnFm"></xref>.
+* Relative URLs, such as an image's `src="img/plot.svg"`, are copied unchanged,
+  so a gathering document in another directory resolves them against its own
+  location. Source-file fragments share this limitation. TODO: rewrite relative
+  URLs to resolve from the fragment's document; remove this once gathered
+  content is relocated.
+
 #### Examples
 
 Each row shows the top-level blocks of a Markdown document, one per entry, and
