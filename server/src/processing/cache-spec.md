@@ -193,6 +193,29 @@ The core rules are:
   the files of both the old and the new target. One-way cross-references keep
   the round trip.
 
+This design reuses the fragment and gather element machinery because that pair
+already solves the hard part, cache coherence: its layering is known to
+converge and its reverse edge is known to terminate, so the new feature adds
+only one more definition kind, one more diff in `commit_file`, and one more
+class of generated markup. Three alternatives were rejected:
+
+* Making every `<xref>` bidirectional. A backlink needs an anchor to link to,
+  and assigning an `id` to every `<xref>` automatically would rewrite the
+  user's source; an explicit, optional `id` also leaves existing documents
+  unchanged.
+* Writing backlinks into the target's source. Everything the cache derives is
+  hydrated in the Client and removed by dehydration, so it never reaches the
+  source; written backlinks would instead require the Server to rewrite the
+  target's file whenever any `<xref>` naming it changed, including files open
+  in the IDE. The cache writes source only under the `SaveOnScan` option (see
+  "Consumer" below), which is user-selected precisely because it may rewrite
+  files open in the IDE, and it never renames duplicate ids since that would
+  silently modify user content (see "Missing and duplicate ids" under
+  <xref ref="cc-P-g5o100jN"></xref>).
+* Requiring the user to place an element at the target to receive backlinks,
+  as a `<fragment>` must be placed. Both ends would then need manual upkeep,
+  while the goal is that editing one end updates the other.
+
 A bidirectional cross-reference reports the same errors in its `ref` as a
 one-way cross-reference (see the Details above). Its `id` is checked
 independently of its `ref`, and the backlink exists only when both are valid:

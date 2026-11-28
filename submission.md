@@ -22,8 +22,9 @@ GitHub userid: SokolovVD-IT
 The core approach (the "Bidirectional cross-references" subsection of
 Cross-references), the attribute rule allowing `id` on an `<xref>`, `id="*"`
 for an `<xref>`, the error rules for an invalid, duplicate, or nested `id` and
-for `ref` errors, what the Server's sanitizer and TinyMCE must allow, and the
-dehydration of the backlink markup and of the `<xref>`.
+for `ref` errors, what the Server's sanitizer and TinyMCE must allow, the
+dehydration of the backlink markup and of the `<xref>`, and the rationale for
+this design with the alternatives it rejects.
 
 #### Build and run test
 
@@ -57,32 +58,19 @@ compile and run the project in the current git repo.` produced:
 | 4 | 5 (2 accepted as one change, 3 rejected) | Error rules: an `<xref>` with an `id` nested in another `<xref>`'s optional content defines no id and produces no backlink. |
 | 5 | 3 (1 accepted, 2 rejected) | TinyMCE and dehydration: the Server's sanitizer of hydrated HTML (`minify`) must also allow the `cc-backlinks` class and `contenteditable` on the backlink markup. |
 | 6 | 2 (1 deferred to a later section, 1 rejected) | No changes; which elements carry `cc-backlinks` is decided with the backlink markup. |
+| 7 | 1 (accepted) | Rationale: the rejection of source-written backlinks now rests on the hydration model and distinguishes the user-selected `SaveOnScan` writes. |
+| 8 | 0 | No changes. |
 
 #### Last specification review
 
-Prompting Copilot Fusion, Standard, in VS Code with `Review round 6: only the
-staged changes to server/src/processing/cache-spec.md, the paragraph "Two
-sanitizers must preserve both new pieces of markup" at the end of the
-"Bidirectional cross-references" subsection. Check it against AMMONIA_OPTIONS
-and minify in server/src/processing.rs and against extended_valid_elements in
-client/src/tinymce-config.mts. Do not edit files. List numbered findings, or
-say that there are none.` produced the following output; strikethrough
-indicates LLM output that I deemed incorrect or irrelevant.
+Prompting Copilot Fusion, Standard, in VS Code with `Review round 8: only the
+staged rewrite of the "Writing backlinks into the target's source" bullet in
+the "Bidirectional cross-references" subsection of
+server/src/processing/cache-spec.md. Check it against the Consumer section
+(SaveOnScan) and "Missing and duplicate ids". Do not edit files. List numbered
+findings, or say that there are none.` produced:
 
-> 1. ~~**The TinyMCE rule omits `data-content`.** The existing `<xref>` rule
->    requires `data-content` to survive editing, but `extended_valid_elements`
->    must allow `data-content` in addition to `id`, `contenteditable`, and
->    `ref`. As written, the paragraph only adds `id` and could leave optional
->    content stripped.~~ (TinyMCE already keeps `data-content`: the browser
->    test `test_xref_optional_content_round_trip` passes with the current
->    schema.)
-> 2. **The Server allowlist does not yet preserve `cc-backlinks`.**
->    `AMMONIA_OPTIONS` has no allowed `cc-backlinks` class, and `minify` uses
->    that configuration. The paragraph correctly says this class must be added,
->    but it does not specify on which elements; this leaves the required
->    implementation incomplete until the markup's element/class pairing is
->    defined. (Deferred: the elements are chosen in the backlink markup
->    section.)
+> No findings.
 
 ### Pavel Shegay
 
