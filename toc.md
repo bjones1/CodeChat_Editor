@@ -65,6 +65,7 @@ Implementation
   * Editor
     * [CodeChatEditorFramework.mts](client/src/CodeChatEditorFramework.mts)
     * [CodeChatEditor.mts](client/src/CodeChatEditor.mts)
+      * [Collapsing headings spec](client/src/collapsing-headings-spec.md)
       * [CodeMirror-integration.mts](client/src/CodeMirror-integration.mts)
       * [tinymce-config.mts](client/src/tinymce-config.mts)
       * [graphviz-webcomponent-setup.mjs](client/src/graphviz-webcomponent-setup.mjs)
