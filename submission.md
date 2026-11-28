@@ -192,21 +192,151 @@ GitHub userid: miras-kbtu
 
 #### Contributions
 
-(Miras Shaltayev's contributions)
+Rewrote the old test, which expected an error for a fragment in a Markdown
+document, to check the new behavior; added 15 edge-case tests for Markdown
+fragments; and wrote the "Testing" subsection of the specification.
 
 #### Build and run test
 
-(Summarized LLM output)
+In a new context, Claude Opus 5.5 (Claude Code) was given the prompt `Verify
+that you can build and run the project in the current git repo.` It found that
+Rust, `cargo-nextest`, Node.js and the client and extension packages were
+installed, but that `pnpm` failed with a corepack signing-key error and that
+`chromedriver` was missing. It did not run `./bt install`, which pipes remote
+install scripts into the shell. `./bt build` then finished with no errors: the
+Rust workspace, the 13 binding-export tests, the client bundles and type check,
+and the VS Code extension all built. All 197 non-browser tests passed; it did
+not run the browser tests, since `chromedriver` is missing. It started the
+standalone server with `codechat-editor-standalone --port 8123 serve`, which
+answered `/ping` and served a rendered `README.md` (HTTP 200) on
+127.0.0.1:8123, then stopped it with `/stop`. It noted that the build leaves an
+untracked `extensions/VSCode/src/codechat-editor-client.darwin-arm64.node`,
+since `.gitignore` lists only the Windows version of this file.
 
 #### Specification review rounds
 
-(Table showing spec review rounds)
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 11 | Found that `test_markdown_fragment_gathered` translated a document twice, with a wrong comment, and fixed the test; removed a sentence about history and one which repeated the Examples intro; listed the third kind of result the tests check; gave the real reason for no browser test |
+| 2 | 10 | No factual errors; four wording fixes: the short-name rule placed before the first short name, the two tests with several documents named, "complete strings" corrected, and the reason the gather list drops a space stated |
 
 #### Last specification review
 
-(LLM and prompt used)
+Prompting Claude Opus 5.5 (a Claude Code agent started with no prior context)
+with `Review only the section named "Testing" under "Fragments in Markdown
+documents" in server/src/processing/cache-spec.md, writing findings to
+review.md.` produced the following output. The agent also received a note that
+it was reviewing a student's clone for a course assignment, and should write
+only `review.md`. Strikethrough indicates output that I deemed irrelevant.
+Findings 1 and 2 ask for tests of, or a test map for, the "Rendering a
+fragment's content" and "Examples" subsections, which other team members own;
+findings 3, 4, 9 and 10 repeat round 1 findings that I rejected, since they ask
+for new tests rather than a change to the specification. Findings 5-8 were
+applied.
 
-(LLM output, possibly with strikethrough)
+> Review of "Testing" (cache-spec.md, "Fragments in Markdown documents")
+> =====================================================================
+>
+> Scope: server/src/processing/cache-spec.md, lines 350-398 (the
+> `<h4 id="cc-MvsDHHHWVW">Testing</h4>` section). I compared the section with
+> the tests in server/src/processing/tests.rs (lines 3243-3840) and with the
+> other subsections of "Fragments in Markdown documents".
+>
+> Checks that passed:
+>
+> * `cd server && cargo test --lib -- markdown` runs 24 tests. All 24 pass,
+>   which includes the edited `test_markdown_fragment_gathered`.
+> * Each test name in the table exists in tests.rs.
+> * The table has one row for each of the nine bullets in "Edge cases and
+>   errors".
+> * The id `cc-MvsDHHHWVW` is unique in the project.
+> * The paragraph about the shared cache agrees with the order of calls in
+>   `_gathered` and `_section_grows`.
+>
+> Findings
+> --------
+>
+> 1. ~~(Major) The section does not cover "Rendering a fragment's content". The~~
+>    ~~table lists tests for the edge cases only, and the last sentence asks for~~
+>    ~~test changes only when "the examples or the edge cases" change. Several~~
+>    ~~rendering rules have no test:~~
+>    * ~~removal of `id` and `data-gather` from an enclosed block (for example, a~~
+>      ~~heading with an `id` inside the fragment);~~
+>    * ~~re-hydration of a cross-reference inside the fragment;~~
+>    * ~~a `contenteditable` of `false` that stays only on `<span>` and `<xref>`;~~
+>    * ~~a comment after the last enclosed block that comes along, and a comment~~
+>      ~~before the first enclosed block that does not;~~
+>    * ~~a relative URL that is copied unchanged.~~
+>    ~~Only `_nested_sections` (removal of another fragment's tag) and `_gathered`~~
+>    ~~(a heading keeps its level) touch these rules. Add a row or a table for~~
+>    ~~the rendering rules. If a rule stays without a test, say so in the section.~~
+>
+> 2. ~~(Major) The section does not name the tests for the examples. The~~
+>    ~~"Examples" subsection says that every row has a matching test, but no~~
+>    ~~text names it. Nine tests appear nowhere in the Testing section's table:~~
+>    ~~`_section`, `_mid_section`, `_before_first_heading`, `_following`,~~
+>    ~~`_section_end`, `_nested_block`, `_nested_sections`,~~
+>    ~~`_following_counts_only_elements`, and `_gathered`. Thus "these tests" in~~
+>    ~~the last sentence is not clear. Add a table that maps each example row to~~
+>    ~~its test, or add a "Tests" column to the examples table.~~
+>
+> 3. ~~(Medium) The row "Blocks are counted in the rendered HTML" claims too much~~
+>    ~~for `test_hydrate_fragment_in_markdown`. That test translates a document~~
+>    ~~with only one block (tests.rs:3278). Thus it cannot show that the fragment~~
+>    ~~begins with the empty paragraph, or that `following="0"` encloses nothing~~
+>    ~~visible. Also, the comment on the test (tests.rs:3272-3274) gives a~~
+>    ~~different purpose. Add a test with a tag alone in its paragraph,~~
+>    ~~`following="0"`, and a paragraph after it. Change the test comment to~~
+>    ~~agree with the spec.~~
+>
+> 4. ~~(Medium) The reason for "There is no browser test" is incomplete. The~~
+>    ~~Client treats the `<fragment>` tag the same in both modes~~
+>    ~~(client/src/tinymce-config.mts:151 and 153). But a Markdown document opens~~
+>    ~~in doc-only mode, in TinyMCE without CodeMirror. Its gathered content also~~
+>    ~~has no `cc-fragment-*` wrappers. The browser suite "Gathered fragment~~
+>    ~~layout" (client/src/CodeChatEditor-test.mts:169) checks only a fragment~~
+>    ~~from a source file. Thus no test checks how the Client shows a gathered~~
+>    ~~Markdown fragment. Write this as a known gap, or change the reason to~~
+>    ~~this: the Server makes all fragment HTML, and the unit tests compare it.~~
+>
+> 5. (Minor) The text uses the short names `_gathered` and `_section_grows` at
+>    line 376. The rule that explains the short names comes later, at line 382.
+>    Move the sentence "Each name below omits the `test_markdown_fragment`
+>    prefix..." before the first short name.
+>
+> 6. (Minor) "such as `_gathered` and `_section_grows`" tells the reader that
+>    other tests use several documents. These two tests are the only ones.
+>    Write "The tests `_gathered` and `_section_grows` ...".
+>
+> 7. (Minor) "Tests compare complete strings, not substrings" is not true for
+>    all tests. `_in_code` (tests.rs:3544) and `_invalid_id`
+>    (tests.rs:3638-3642) make sure that the fragment map is empty. Write
+>    "Tests compare complete strings, or make sure that no fragment is stored,
+>    ...".
+>
+> 8. (Minor) In "a heading which held the tag keeps the space before it", the
+>    word "it" can refer to the heading or to the tag. The space is the one
+>    that came before the tag, which cleaning removes. Also, the text does not
+>    say why the gather list differs: the translated document goes through
+>    `minify` (processing.rs:1372), but the stored content does not. Write: "a
+>    heading which held the tag keeps the space that preceded the tag, as in
+>    `<h2>A </h2>`; the translated document is minified, so its gather list
+>    shows `<h2>A</h2>`."
+>
+> 9. ~~(Minor) The row "`following` values" hides a gap. `_following_error_in_tag`~~
+>    ~~checks the tag error only for `"x"` (tests.rs:3799). The values `"-1"`,~~
+>    ~~`"1.5"` and `""` are checked only in the stored content. The edge case~~
+>    ~~also says that every gather element shows the error, but no test renders a~~
+>    ~~gather list for this case. Add the other values to the tag test, or say~~
+>    ~~that the stored content stands for the gather element.~~
+>
+> 10. ~~(Minor) The row "A tag in code is text" names `_in_code`, but that test~~
+>     ~~only makes sure that the cache stores no fragment (tests.rs:3544). It~~
+>     ~~does not make sure that the tag shows as text in the translated document.~~
+>     ~~Add a check of the translated document, or change the row to "no fragment~~
+>     ~~is stored".~~
+>
+> Total: 10 findings (2 major, 2 medium, 6 minor).
 
 ### Aidyn Tazhibay
 
